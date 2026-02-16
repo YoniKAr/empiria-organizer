@@ -1,6 +1,6 @@
 import { auth0 } from '@/lib/auth0';
-import { createClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export default async function OrganizerRoot() {
   // 1. Check Session (Shared Cookie)
@@ -14,7 +14,6 @@ export default async function OrganizerRoot() {
 
   // 3. Logged In? -> Check Role in Supabase
   // We use the Service Role Key (Safe on Server) to verify they are actually an organizer
-  import { getSupabaseAdmin } from '@/lib/supabase';
   const supabase = getSupabaseAdmin();
  
 
