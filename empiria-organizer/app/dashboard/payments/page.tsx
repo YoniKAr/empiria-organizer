@@ -111,7 +111,7 @@ export default async function PaymentsPage({
               {orders.map((order) => (
                 <tr key={order.id} className="border-b border-gray-50">
                   <td className="py-3 px-4 font-medium text-gray-900 max-w-[200px] truncate">
-                    {(order.events as { title: string })?.title || '—'}
+                    {(order.events as unknown as { title: string }[])?.[0]?.title || '—'}
                   </td>
                   <td className="py-3 px-4 text-gray-600">
                     ₹{Number(order.total_amount).toLocaleString('en-IN')}
