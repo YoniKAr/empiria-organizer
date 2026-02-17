@@ -40,10 +40,13 @@ export async function GET(req: NextRequest) {
     const account = await stripe.accounts.retrieve(user.stripe_account_id);
 
     if (account.charges_enabled && account.details_submitted) {
-      // Onboarding complete — update DB
+      // Onboarding complete — update DB with currency from Stripe account
       await supabase
         .from('users')
-        .update({ stripe_onboarding_completed: true })
+        .update({
+          stripe_onboarding_completed: true,
+          default_currency: account.default_currency || 'cad',
+        })
         .eq('auth0_id', session.user.sub);
 
       return NextResponse.redirect(new URL('/dashboard/payments?stripe=success', baseUrl));

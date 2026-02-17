@@ -1,5 +1,6 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { TrendingUp, Ticket, CalendarDays, Eye, ArrowRight } from 'lucide-react';
@@ -11,8 +12,14 @@ export default async function DashboardHome() {
   const supabase = getSupabaseAdmin();
   const orgId = session.user.sub;
 
-  // Fetch all organizer data in parallel
-  const [eventsRes, ordersRes, ticketsRes] = await Promise.all([
+  // Fetch profile + all organizer data in parallel
+  const [profileRes, eventsRes, ordersRes, ticketsRes] = await Promise.all([
+    supabase
+      .from('users')
+      .select('default_currency')
+      .eq('auth0_id', orgId)
+      .single(),
+
     supabase
       .from('events')
       .select('id, title, slug, status, start_at, total_tickets_sold, total_capacity, created_at')
@@ -35,6 +42,7 @@ export default async function DashboardHome() {
   const events = eventsRes.data || [];
   const orders = ordersRes.data || [];
   const tickets = ticketsRes.data || [];
+  const currency = profileRes.data?.default_currency || 'cad';
 
   // Calculate stats
   const totalRevenue = orders.reduce((sum, o) => sum + Number(o.organizer_payout_amount), 0);
@@ -68,8 +76,8 @@ export default async function DashboardHome() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           label="Total Revenue"
-          value={`₹${totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
-          sub={revenueThisMonth > 0 ? `₹${revenueThisMonth.toLocaleString('en-IN')} this month` : 'No revenue this month'}
+          value={formatCurrency(totalRevenue, currency)}
+          sub={revenueThisMonth > 0 ? `${formatCurrency(revenueThisMonth, currency)} this month` : 'No revenue this month'}
           icon={<TrendingUp size={18} />}
           color="green"
         />
@@ -124,7 +132,7 @@ export default async function DashboardHome() {
                     <p className="text-sm font-medium text-gray-900 truncate">{event.title}</p>
                     <p className="text-xs text-gray-500">
                       {event.start_at
-                        ? new Date(event.start_at).toLocaleDateString('en-IN', {
+                        ? new Date(event.start_at).toLocaleDateString('en-CA', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',

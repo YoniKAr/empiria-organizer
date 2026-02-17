@@ -21,6 +21,7 @@ import {
   Monitor,
 } from 'lucide-react';
 import { createEvent, updateEvent, publishEvent } from '@/lib/actions';
+import { getCurrencySymbol, formatCurrency } from '@/lib/utils';
 import EventPreview from './EventPreview';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -73,7 +74,7 @@ const DEFAULT_TIER: TicketTier = {
   name: '',
   description: '',
   price: 0,
-  currency: 'inr',
+  currency: 'cad',
   initial_quantity: 100,
   max_per_order: 10,
   sales_start_at: '',
@@ -94,7 +95,7 @@ const INITIAL_FORM: EventFormData = {
   venue_name: '',
   address_text: '',
   city: '',
-  currency: 'inr',
+  currency: 'cad',
   ticket_tiers: [{ ...DEFAULT_TIER }],
 };
 
@@ -714,7 +715,7 @@ function StepTickets({
                 />
               </div>
               <div>
-                <FieldLabel>Price (₹)</FieldLabel>
+                <FieldLabel>Price ({getCurrencySymbol(form.currency)})</FieldLabel>
                 <Input
                   type="number"
                   min="0"
@@ -860,7 +861,7 @@ function StepReview({
               <div key={tier.id} className="flex justify-between text-sm py-1">
                 <span className="text-gray-600">{tier.name || 'Unnamed'}</span>
                 <span className="font-medium">
-                  {tier.price === 0 ? 'Free' : `₹${tier.price}`} × {tier.initial_quantity}
+                  {tier.price === 0 ? 'Free' : `${formatCurrency(tier.price, form.currency)}`} × {tier.initial_quantity}
                 </span>
               </div>
             ))}

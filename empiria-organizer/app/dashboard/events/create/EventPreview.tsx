@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { MapPin, Calendar, Clock, Ticket, Users, Share2, Heart, Minus, Plus } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface TicketTier {
   id: string;
@@ -128,7 +129,7 @@ export default function EventPreview({
                   </div>
                   <div>
                     <p className="text-sm font-bold text-gray-900">
-                      {startDate.toLocaleDateString('en-IN', {
+                      {startDate.toLocaleDateString('en-CA', {
                         weekday: 'long',
                         month: 'long',
                         day: 'numeric',
@@ -137,9 +138,9 @@ export default function EventPreview({
                     </p>
                     <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                       <Clock size={12} />
-                      {startDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      {startDate.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' })}
                       {endDate &&
-                        ` – ${endDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`}
+                        ` – ${endDate.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' })}`}
                     </p>
                   </div>
                 </div>
@@ -210,7 +211,7 @@ export default function EventPreview({
                           )}
                         </div>
                         <p className="text-sm font-bold text-gray-900 whitespace-nowrap ml-2">
-                          {tier.price === 0 ? 'Free' : `₹${tier.price.toLocaleString('en-IN')}`}
+                          {tier.price === 0 ? 'Free' : formatCurrency(tier.price, form.currency)}
                         </p>
                       </div>
                       <div className="flex items-center justify-between">
@@ -247,7 +248,7 @@ export default function EventPreview({
                   <div className="flex justify-between text-sm mb-3">
                     <span className="text-gray-600">{totalSelected} ticket{totalSelected > 1 ? 's' : ''}</span>
                     <span className="font-bold">
-                      {totalPrice === 0 ? 'Free' : `₹${totalPrice.toLocaleString('en-IN')}`}
+                      {totalPrice === 0 ? 'Free' : formatCurrency(totalPrice, form.currency)}
                     </span>
                   </div>
                   <button
@@ -282,7 +283,7 @@ export default function EventPreview({
               <div className="flex justify-between">
                 <span className="text-gray-600">Total</span>
                 <span className="font-bold">
-                  {totalPrice === 0 ? 'Free' : `₹${totalPrice.toLocaleString('en-IN')}`}
+                  {totalPrice === 0 ? 'Free' : formatCurrency(totalPrice, form.currency)}
                 </span>
               </div>
             </div>

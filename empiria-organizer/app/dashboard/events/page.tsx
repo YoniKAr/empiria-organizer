@@ -1,5 +1,6 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { Calendar, MapPin, Users, MoreHorizontal, Pencil, Eye, Trash2 } from 'lucide-react';
@@ -185,7 +186,7 @@ function EventCard({ event }: { event: EventWithTiers }) {
               {startDate && (
                 <span className="flex items-center gap-1">
                   <Calendar size={12} />
-                  {startDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {startDate.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
               )}
               {(event.venue_name || event.city) && (
@@ -208,7 +209,7 @@ function EventCard({ event }: { event: EventWithTiers }) {
             <div className="flex items-center gap-3">
               {lowestPrice !== null && (
                 <span className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                  {lowestPrice === 0 ? 'Free' : `From ₹${lowestPrice.toLocaleString('en-IN')}`}
+                  {lowestPrice === 0 ? 'Free' : `From ${formatCurrency(lowestPrice, event.currency)}`}
                 </span>
               )}
               {event.ticket_tiers.length > 0 && (

@@ -1,5 +1,6 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { formatCurrency } from '@/lib/utils';
 import StripeConnectButton from './StripeConnectButton';
 
 export default async function PaymentsPage({
@@ -10,6 +11,14 @@ export default async function PaymentsPage({
   const session = await auth0.getSession();
   const supabase = getSupabaseAdmin();
   const params = await searchParams;
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('stripe_account_id, stripe_onboarding_completed, default_currency')
+    .eq('auth0_id', session?.user.sub)
+    .single();
+
+  const currency = user?.default_currency || 'cad';
 
   const { data: user } = await supabase
     .from('users')
@@ -82,7 +91,7 @@ export default async function PaymentsPage({
           {totalRevenue > 0 && (
             <div className="mt-4 pt-4 border-t border-green-200">
               <p className="text-sm text-green-700">
-                Total earnings: <span className="font-bold">₹{totalRevenue.toLocaleString('en-IN')}</span>
+                Total earnings: <span className="font-bold">{formatCurrency(totalRevenue, currency)}</span>
               </p>
             </div>
           )}
@@ -114,10 +123,10 @@ export default async function PaymentsPage({
                     {(order.events as unknown as { title: string }[])?.[0]?.title || '—'}
                   </td>
                   <td className="py-3 px-4 text-gray-600">
-                    ₹{Number(order.total_amount).toLocaleString('en-IN')}
+                    {formatCurrency(Number(order.total_amount), order.currency || currency)}
                   </td>
                   <td className="py-3 px-4 font-medium text-green-700">
-                    ₹{Number(order.organizer_payout_amount).toLocaleString('en-IN')}
+                    {formatCurrency(Number(order.organizer_payout_amount), order.currency || currency)}
                   </td>
                   <td className="py-3 px-4">
                     <span
@@ -133,7 +142,7 @@ export default async function PaymentsPage({
                     </span>
                   </td>
                   <td className="py-3 px-4 text-gray-500">
-                    {new Date(order.created_at).toLocaleDateString('en-IN')}
+                    {new Date(order.created_at).toLocaleDateString('en-CA')}
                   </td>
                 </tr>
               ))}

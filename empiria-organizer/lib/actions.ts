@@ -62,7 +62,7 @@ function buildTiers(eventId: string, tiers: TicketTierInput[]) {
     name: t.name,
     description: t.description || null,
     price: t.price || 0,
-    currency: t.currency || 'inr',
+    currency: t.currency || 'cad',
     initial_quantity: t.initial_quantity,
     remaining_quantity: t.initial_quantity,
     max_per_order: t.max_per_order || 10,
@@ -105,7 +105,7 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
       venue_name: form.venue_name || null,
       address_text: form.address_text || null,
       city: form.city || null,
-      currency: form.currency || 'inr',
+      currency: form.currency || 'cad',
       total_capacity: totalCapacity,
       status: 'draft',
       source_app: 'organizer.empiria',
@@ -171,7 +171,7 @@ export async function updateEvent(
       venue_name: form.venue_name || null,
       address_text: form.address_text || null,
       city: form.city || null,
-      currency: form.currency || 'inr',
+      currency: form.currency || 'cad',
       total_capacity: totalCapacity,
     })
     .eq('id', eventId);
@@ -258,18 +258,20 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
   // Create Stripe Express account if none exists
   if (!accountId) {
     const account = await stripe.accounts.create({
-  type: 'express',
-  email: profile.email || user.email,
-  capabilities: {
-    card_payments: { requested: true },
-    transfers: { requested: true },
-  },
-  business_type: 'individual',
-  metadata: {
-    auth0_id: user.sub,
-    platform: 'empiria',
-  },
-});
+      type: 'express',
+      country: 'IN',
+      email: profile.email || user.email,
+      capabilities: {
+        card_payments: { requested: true },
+        transfers: { requested: true },
+      },
+      business_type: 'individual',
+      metadata: {
+        auth0_id: user.sub,
+        platform: 'empiria',
+      },
+    });
+
     accountId = account.id;
 
     await supabase
