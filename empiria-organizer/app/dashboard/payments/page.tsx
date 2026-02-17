@@ -20,12 +20,6 @@ export default async function PaymentsPage({
 
   const currency = user?.default_currency || 'cad';
 
-  const { data: user } = await supabase
-    .from('users')
-    .select('stripe_account_id, stripe_onboarding_completed')
-    .eq('auth0_id', session?.user.sub)
-    .single();
-
   // Fetch recent orders for this organizer's events
   const { data: orders } = await supabase
     .from('orders')
