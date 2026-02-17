@@ -258,20 +258,18 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
   // Create Stripe Express account if none exists
   if (!accountId) {
     const account = await stripe.accounts.create({
-      type: 'express',
-      country: 'IN',
-      email: profile.email || user.email,
-      capabilities: {
-        card_payments: { requested: true },
-        transfers: { requested: true },
-      },
-      business_type: 'individual',
-      metadata: {
-        auth0_id: user.sub,
-        platform: 'empiria',
-      },
-    });
-
+  type: 'express',
+  email: profile.email || user.email,
+  capabilities: {
+    card_payments: { requested: true },
+    transfers: { requested: true },
+  },
+  business_type: 'individual',
+  metadata: {
+    auth0_id: user.sub,
+    platform: 'empiria',
+  },
+});
     accountId = account.id;
 
     await supabase
