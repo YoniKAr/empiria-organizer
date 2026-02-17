@@ -1,17 +1,28 @@
-import { Auth0Provider } from '@auth0/nextjs-auth0/client';
-import "./globals.css"; // Ensure you have your Tailwind directives here
+// app/layout.tsx
+// Root layout — includes the Admin Perspective banner at the top.
 
-export const metadata = {
-  title: 'Empiria Organizer',
-  description: 'Organizer Dashboard',
+import type { Metadata } from "next";
+import { AdminPerspectiveBanner } from "@/components/AdminPerspectiveBanner";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Empiria — Organizer Dashboard",
+  description: "Manage your events, tickets, and revenue.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <Auth0Provider>
-        <body>{children}</body>
-      </Auth0Provider>
+      <body>
+        {/* Banner renders at the very top, above all dashboard UI.
+            It only appears when an admin is in perspective mode. */}
+        <AdminPerspectiveBanner />
+        {children}
+      </body>
     </html>
   );
 }
