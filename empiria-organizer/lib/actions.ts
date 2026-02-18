@@ -297,7 +297,11 @@ export async function cancelEvent(eventId: string): Promise<ActionResult<{ id: s
   return { success: true, data: { id: eventId } };
 }
 
-export async function deleteEvent(eventId: string): Promise<ActionResult<{ id: string }>> {
+export async function deleteEvent(
+  eventId: string,
+  reason?: string,
+  releaseToPool?: boolean
+): Promise<ActionResult<{ id: string; mode: 'deleted' | 'cancelled' }>> {
   const user = await getAuthUser();
   if (!user) return { success: false, error: 'Unauthorized' };
 
@@ -305,7 +309,7 @@ export async function deleteEvent(eventId: string): Promise<ActionResult<{ id: s
 
   const { data: event } = await supabase
     .from('events')
-    .select('id, organizer_id, status, total_tickets_sold')
+    .select('id, organizer_id, status, title, start_at, venue_name, city, total_tickets_sold')
     .eq('id', eventId)
     .single();
 
@@ -313,26 +317,178 @@ export async function deleteEvent(eventId: string): Promise<ActionResult<{ id: s
     return { success: false, error: 'Not found' };
   }
 
-  // Only allow deleting drafts or cancelled events with no sold tickets
-  if (event.status === 'published' || event.status === 'completed') {
-    return { success: false, error: 'Cannot delete a published or completed event. Unpublish or cancel it first.' };
+  // Check if any tickets were ever issued (including cancelled/refunded/used)
+  const { count: ticketCount } = await supabase
+    .from('tickets')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId);
+
+  const hasTickets = (ticketCount || 0) > 0;
+
+  if (!hasTickets) {
+    // No tickets ever — hard delete event + tiers from DB
+    await supabase.from('ticket_tiers').delete().eq('event_id', eventId);
+
+    const { error } = await supabase
+      .from('events')
+      .delete()
+      .eq('id', eventId);
+
+    if (error) return { success: false, error: error.message };
+
+    return { success: true, data: { id: eventId, mode: 'deleted' } };
   }
 
-  if (event.total_tickets_sold > 0) {
-    return { success: false, error: 'Cannot delete an event that has sold tickets. Cancel it instead.' };
+  // Tickets exist — refund all valid ones, then mark event as cancelled
+  if (!reason?.trim()) {
+    return { success: false, error: 'A cancellation reason is required when tickets have been issued' };
   }
 
-  // Delete ticket tiers first (FK dependency)
-  await supabase.from('ticket_tiers').delete().eq('event_id', eventId);
+  // Find all valid tickets grouped by order
+  const { data: validTickets } = await supabase
+    .from('tickets')
+    .select('id, order_id, attendee_name, attendee_email, tier_id')
+    .eq('event_id', eventId)
+    .eq('status', 'valid');
 
-  const { error } = await supabase
+  if (validTickets && validTickets.length > 0) {
+    // Group by order for batched Stripe refunds
+    const orderGroups = new Map<string, typeof validTickets>();
+    for (const t of validTickets) {
+      if (!t.order_id) continue;
+      const group = orderGroups.get(t.order_id) || [];
+      group.push(t);
+      orderGroups.set(t.order_id, group);
+    }
+
+    // Fetch all tiers in one query
+    const tierIds = [...new Set(validTickets.map((t) => t.tier_id))];
+    const { data: tiers } = await supabase
+      .from('ticket_tiers')
+      .select('id, name, price, currency')
+      .in('id', tierIds);
+    const tierMap = new Map((tiers || []).map((t) => [t.id, t]));
+
+    // Process each order
+    for (const [orderId, orderTickets] of orderGroups) {
+      const { data: order } = await supabase
+        .from('orders')
+        .select('stripe_payment_intent_id, currency')
+        .eq('id', orderId)
+        .single();
+
+      if (!order?.stripe_payment_intent_id) continue;
+
+      // Calculate total refund for this order's valid tickets
+      let totalRefundStripe = 0;
+      for (const t of orderTickets) {
+        const tier = tierMap.get(t.tier_id);
+        if (tier) {
+          totalRefundStripe += toStripeAmount(tier.price, tier.currency || order.currency || 'cad');
+        }
+      }
+
+      if (totalRefundStripe > 0) {
+        try {
+          await stripe.refunds.create({
+            payment_intent: order.stripe_payment_intent_id,
+            amount: totalRefundStripe,
+            reason: 'requested_by_customer',
+            reverse_transfer: true,
+            refund_application_fee: true,
+          });
+        } catch (err) {
+          console.error(`Stripe refund error for order ${orderId}:`, err);
+        }
+      }
+    }
+
+    const newStatus = releaseToPool ? 'refunded' : 'cancelled';
+
+    // Mark all valid tickets
+    await supabase
+      .from('tickets')
+      .update({ status: newStatus })
+      .eq('event_id', eventId)
+      .eq('status', 'valid');
+
+    // Restore inventory if releasing to pool
+    if (releaseToPool) {
+      for (const tierId of tierIds) {
+        const count = validTickets.filter((t) => t.tier_id === tierId).length;
+        const { data: currentTier } = await supabase
+          .from('ticket_tiers')
+          .select('remaining_quantity')
+          .eq('id', tierId)
+          .single();
+
+        if (currentTier) {
+          await supabase
+            .from('ticket_tiers')
+            .update({ remaining_quantity: currentTier.remaining_quantity + count })
+            .eq('id', tierId);
+        }
+      }
+
+      const { data: currentEvent } = await supabase
+        .from('events')
+        .select('total_tickets_sold')
+        .eq('id', eventId)
+        .single();
+
+      if (currentEvent) {
+        await supabase
+          .from('events')
+          .update({ total_tickets_sold: Math.max(0, currentEvent.total_tickets_sold - validTickets.length) })
+          .eq('id', eventId);
+      }
+    }
+
+    // Send cancellation emails — one per unique attendee
+    const attendeeMap = new Map<string, { name: string; tierNames: string[]; refund: number }>();
+    for (const t of validTickets) {
+      const tier = tierMap.get(t.tier_id);
+      const existing = attendeeMap.get(t.attendee_email);
+      if (existing) {
+        existing.tierNames.push(tier?.name || 'Unknown');
+        existing.refund += tier?.price || 0;
+      } else {
+        attendeeMap.set(t.attendee_email, {
+          name: t.attendee_name,
+          tierNames: [tier?.name || 'Unknown'],
+          refund: tier?.price || 0,
+        });
+      }
+    }
+
+    const currency = (tiers && tiers[0]?.currency) || 'cad';
+    for (const [email, { name, tierNames, refund }] of attendeeMap) {
+      try {
+        await sendTicketCancellationEmail({
+          to: email,
+          attendeeName: name,
+          eventTitle: event.title,
+          eventDate: event.start_at,
+          venueName: event.venue_name || '',
+          city: event.city || '',
+          tierName: tierNames.join(', '),
+          reason: reason.trim(),
+          refundAmount: refund,
+          currency,
+        });
+      } catch (emailErr) {
+        console.error('Failed to send cancellation email to', email, emailErr);
+      }
+    }
+  }
+
+  // Mark event as cancelled
+  await supabase
     .from('events')
-    .delete()
+    .update({ status: 'cancelled' })
     .eq('id', eventId);
 
-  if (error) return { success: false, error: error.message };
-
-  return { success: true, data: { id: eventId } };
+  return { success: true, data: { id: eventId, mode: 'cancelled' } };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -137,7 +137,7 @@ export default async function EventDetailPage({ params }: PageProps) {
           <EventActions
             eventId={event.id}
             status={event.status}
-            hasTicketsSold={event.total_tickets_sold > 0}
+            hasTicketsSold={allTickets.length > 0}
           />
         </div>
       </div>
