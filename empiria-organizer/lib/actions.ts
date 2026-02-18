@@ -259,7 +259,7 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
   if (!accountId) {
     const account = await stripe.accounts.create({
       type: 'express',
-      country: 'IN',
+      country: 'CA',
       email: profile.email || user.email,
       capabilities: {
         card_payments: { requested: true },
