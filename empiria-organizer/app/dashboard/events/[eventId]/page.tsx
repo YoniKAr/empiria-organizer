@@ -34,15 +34,19 @@ export default async function EventDetailPage({ params }: PageProps) {
   }
 
   // Fetch all tickets for this event with tier + order info
-  const { data: tickets } = await supabase
+  const { data: tickets, error: ticketsError } = await supabase
     .from('tickets')
     .select(`
-      id, status, attendee_name, attendee_email, created_at,
+      id, status, attendee_name, attendee_email, purchase_date,
       ticket_tiers(name, price, currency),
       orders(stripe_payment_intent_id, currency)
     `)
     .eq('event_id', eventId)
-    .order('created_at', { ascending: false });
+    .order('purchase_date', { ascending: false });
+
+  if (ticketsError) {
+    console.error('Failed to fetch tickets:', ticketsError);
+  }
 
   const allTickets = (tickets || []).map((t: Record<string, unknown>) => {
     const tier = t.ticket_tiers as { name: string; price: number; currency: string } | null;
@@ -52,7 +56,7 @@ export default async function EventDetailPage({ params }: PageProps) {
       status: t.status as string,
       attendee_name: t.attendee_name as string,
       attendee_email: t.attendee_email as string,
-      created_at: t.created_at as string,
+      created_at: t.purchase_date as string,
       tier_name: tier?.name || 'Unknown',
       tier_price: tier?.price || 0,
       currency: tier?.currency || order?.currency || event.currency || 'cad',
