@@ -37,9 +37,9 @@ export default async function EventDetailPage({ params }: PageProps) {
   const { data: tickets, error: ticketsError } = await supabase
     .from('tickets')
     .select(`
-      id, status, attendee_name, attendee_email, purchase_date,
+      id, order_id, status, attendee_name, attendee_email, purchase_date,
       ticket_tiers(name, price, currency),
-      orders(stripe_payment_intent_id, currency)
+      orders(id, stripe_payment_intent_id, currency)
     `)
     .eq('event_id', eventId)
     .order('purchase_date', { ascending: false });
@@ -50,9 +50,10 @@ export default async function EventDetailPage({ params }: PageProps) {
 
   const allTickets = (tickets || []).map((t: Record<string, unknown>) => {
     const tier = t.ticket_tiers as { name: string; price: number; currency: string } | null;
-    const order = t.orders as { stripe_payment_intent_id: string; currency: string } | null;
+    const order = t.orders as { id: string; stripe_payment_intent_id: string; currency: string } | null;
     return {
       id: t.id as string,
+      order_id: (t.order_id as string) || '',
       status: t.status as string,
       attendee_name: t.attendee_name as string,
       attendee_email: t.attendee_email as string,

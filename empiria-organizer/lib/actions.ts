@@ -329,6 +329,8 @@ export async function createStripeStandardConnectLink(): Promise<ActionResult<{ 
 // TICKET ACTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ─── Single ticket cancel ────────────────────────────────────────────────
+
 export async function cancelTicketWithRefund(
   ticketId: string,
   reason: string,
@@ -344,9 +346,7 @@ export async function cancelTicketWithRefund(
   // Fetch ticket with related data
   const { data: ticket, error: ticketError } = await supabase
     .from('tickets')
-    .select(`
-      id, status, attendee_name, attendee_email, event_id, tier_id, order_id
-    `)
+    .select('id, status, attendee_name, attendee_email, event_id, tier_id, order_id')
     .eq('id', ticketId)
     .single();
 
@@ -404,19 +404,20 @@ export async function cancelTicketWithRefund(
     return { success: false, error: message };
   }
 
+  const newStatus = releaseToPool ? 'refunded' : 'cancelled';
+
+  const { error: updateError } = await supabase
+    .from('tickets')
+    .update({ status: newStatus })
+    .eq('id', ticketId);
+
+  if (updateError) {
+    console.error('Failed to update ticket status after refund:', updateError);
+    return { success: false, error: 'Refund processed but failed to update ticket status' };
+  }
+
+  // Restore inventory when releasing back to pool
   if (releaseToPool) {
-    // Delete ticket and restore inventory so the slot can be resold
-    const { error: deleteError } = await supabase
-      .from('tickets')
-      .delete()
-      .eq('id', ticketId);
-
-    if (deleteError) {
-      console.error('Failed to delete ticket after refund:', deleteError);
-      return { success: false, error: 'Refund processed but failed to remove ticket' };
-    }
-
-    // Increment remaining_quantity on tier
     const { data: currentTier } = await supabase
       .from('ticket_tiers')
       .select('remaining_quantity')
@@ -430,7 +431,6 @@ export async function cancelTicketWithRefund(
         .eq('id', ticket.tier_id);
     }
 
-    // Decrement total_tickets_sold on event
     const { data: currentEvent } = await supabase
       .from('events')
       .select('total_tickets_sold')
@@ -443,20 +443,9 @@ export async function cancelTicketWithRefund(
         .update({ total_tickets_sold: Math.max(0, currentEvent.total_tickets_sold - 1) })
         .eq('id', ticket.event_id);
     }
-  } else {
-    // Keep ticket as cancelled — pool stays reduced
-    const { error: updateError } = await supabase
-      .from('tickets')
-      .update({ status: 'cancelled' })
-      .eq('id', ticketId);
-
-    if (updateError) {
-      console.error('Failed to update ticket status after refund:', updateError);
-      return { success: false, error: 'Refund processed but failed to update ticket status' };
-    }
   }
 
-  // Send cancellation email (non-blocking — don't fail the action if email fails)
+  // Send cancellation email
   try {
     await sendTicketCancellationEmail({
       to: ticket.attendee_email,
@@ -475,4 +464,187 @@ export async function cancelTicketWithRefund(
   }
 
   return { success: true, data: { refundId } };
+}
+
+// ─── Full / partial order cancel ─────────────────────────────────────────
+
+export async function cancelOrderWithRefund(
+  orderId: string,
+  reason: string,
+  releaseToPool: boolean,
+  ticketIds?: string[] // if provided, only cancel these tickets (partial); otherwise cancel all valid tickets
+): Promise<ActionResult<{ refundedCount: number; totalRefund: number }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  if (!reason.trim()) return { success: false, error: 'A cancellation reason is required' };
+
+  const supabase = getSupabaseAdmin();
+
+  // Fetch order
+  const { data: order } = await supabase
+    .from('orders')
+    .select('id, event_id, stripe_payment_intent_id, currency')
+    .eq('id', orderId)
+    .single();
+
+  if (!order) return { success: false, error: 'Order not found' };
+  if (!order.stripe_payment_intent_id) return { success: false, error: 'No payment found for this order' };
+
+  // Verify organizer owns the event
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, organizer_id, title, start_at, venue_name, city')
+    .eq('id', order.event_id)
+    .single();
+
+  if (!event || event.organizer_id !== user.sub) {
+    return { success: false, error: 'Not authorized' };
+  }
+
+  // Fetch valid tickets for this order
+  let query = supabase
+    .from('tickets')
+    .select('id, status, attendee_name, attendee_email, tier_id')
+    .eq('order_id', orderId)
+    .eq('status', 'valid');
+
+  if (ticketIds && ticketIds.length > 0) {
+    query = query.in('id', ticketIds);
+  }
+
+  const { data: ticketsToCancel } = await query;
+
+  if (!ticketsToCancel || ticketsToCancel.length === 0) {
+    return { success: false, error: 'No valid tickets to cancel in this order' };
+  }
+
+  // Fetch all relevant tiers in one query
+  const tierIds = [...new Set(ticketsToCancel.map((t) => t.tier_id))];
+  const { data: tiers } = await supabase
+    .from('ticket_tiers')
+    .select('id, name, price, currency')
+    .in('id', tierIds);
+
+  const tierMap = new Map((tiers || []).map((t) => [t.id, t]));
+
+  // Calculate total refund amount
+  let totalRefundDisplay = 0;
+  let totalRefundStripe = 0;
+  for (const t of ticketsToCancel) {
+    const tier = tierMap.get(t.tier_id);
+    if (tier) {
+      const curr = tier.currency || order.currency || 'cad';
+      totalRefundDisplay += tier.price;
+      totalRefundStripe += toStripeAmount(tier.price, curr);
+    }
+  }
+
+  // Issue single Stripe refund for total amount
+  try {
+    await stripe.refunds.create({
+      payment_intent: order.stripe_payment_intent_id,
+      amount: totalRefundStripe,
+      reason: 'requested_by_customer',
+      reverse_transfer: true,
+      refund_application_fee: true,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Stripe refund failed';
+    console.error('Stripe refund error:', err);
+    return { success: false, error: message };
+  }
+
+  const newStatus = releaseToPool ? 'refunded' : 'cancelled';
+  const cancelledIds = ticketsToCancel.map((t) => t.id);
+
+  // Update all tickets
+  const { error: updateError } = await supabase
+    .from('tickets')
+    .update({ status: newStatus })
+    .in('id', cancelledIds);
+
+  if (updateError) {
+    console.error('Failed to update ticket statuses:', updateError);
+    return { success: false, error: 'Refund processed but failed to update ticket statuses' };
+  }
+
+  // Restore inventory when releasing back to pool
+  if (releaseToPool) {
+    // Count tickets per tier to batch the increment
+    const tierCounts = new Map<string, number>();
+    for (const t of ticketsToCancel) {
+      tierCounts.set(t.tier_id, (tierCounts.get(t.tier_id) || 0) + 1);
+    }
+
+    for (const [tierId, count] of tierCounts) {
+      const { data: currentTier } = await supabase
+        .from('ticket_tiers')
+        .select('remaining_quantity')
+        .eq('id', tierId)
+        .single();
+
+      if (currentTier) {
+        await supabase
+          .from('ticket_tiers')
+          .update({ remaining_quantity: currentTier.remaining_quantity + count })
+          .eq('id', tierId);
+      }
+    }
+
+    const { data: currentEvent } = await supabase
+      .from('events')
+      .select('total_tickets_sold')
+      .eq('id', event.id)
+      .single();
+
+    if (currentEvent) {
+      await supabase
+        .from('events')
+        .update({ total_tickets_sold: Math.max(0, currentEvent.total_tickets_sold - ticketsToCancel.length) })
+        .eq('id', event.id);
+    }
+  }
+
+  // Send one cancellation email per unique attendee email
+  const attendeeEmails = new Map<string, { name: string; tierNames: string[] }>();
+  for (const t of ticketsToCancel) {
+    const existing = attendeeEmails.get(t.attendee_email);
+    const tierName = tierMap.get(t.tier_id)?.name || 'Unknown';
+    if (existing) {
+      existing.tierNames.push(tierName);
+    } else {
+      attendeeEmails.set(t.attendee_email, { name: t.attendee_name, tierNames: [tierName] });
+    }
+  }
+
+  const currency = order.currency || 'cad';
+  for (const [email, { name, tierNames }] of attendeeEmails) {
+    // Calculate refund for this attendee's tickets
+    const attendeeTickets = ticketsToCancel.filter((t) => t.attendee_email === email);
+    let attendeeRefund = 0;
+    for (const t of attendeeTickets) {
+      const tier = tierMap.get(t.tier_id);
+      if (tier) attendeeRefund += tier.price;
+    }
+
+    try {
+      await sendTicketCancellationEmail({
+        to: email,
+        attendeeName: name,
+        eventTitle: event.title,
+        eventDate: event.start_at,
+        venueName: event.venue_name || '',
+        city: event.city || '',
+        tierName: tierNames.join(', '),
+        reason: reason.trim(),
+        refundAmount: attendeeRefund,
+        currency,
+      });
+    } catch (emailErr) {
+      console.error('Failed to send cancellation email to', email, emailErr);
+    }
+  }
+
+  return { success: true, data: { refundedCount: ticketsToCancel.length, totalRefund: totalRefundDisplay } };
 }
