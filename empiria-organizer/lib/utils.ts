@@ -23,6 +23,15 @@ export function formatCurrency(amount: number, currency: string = 'cad'): string
   }).format(amount);
 }
 
+function isZeroDecimalCurrency(currency: string): boolean {
+  return ['jpy', 'krw', 'vnd'].includes(currency.toLowerCase());
+}
+
+export function toStripeAmount(amount: number, currency: string): number {
+  if (isZeroDecimalCurrency(currency)) return Math.round(amount);
+  return Math.round(amount * 100);
+}
+
 export function getCurrencySymbol(currency: string = 'cad'): string {
   const code = currency.toLowerCase();
   const config = CURRENCY_CONFIG[code] || { locale: 'en-US' };

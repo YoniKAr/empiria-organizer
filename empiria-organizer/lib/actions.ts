@@ -3,6 +3,8 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
+import { toStripeAmount } from '@/lib/utils';
+import { sendTicketCancellationEmail } from '@/lib/email';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface TicketTierInput {
@@ -321,4 +323,114 @@ export async function createStripeStandardConnectLink(): Promise<ActionResult<{ 
 
   const url = `https://connect.stripe.com/oauth/authorize?${params.toString()}`;
   return { success: true, data: { url } };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TICKET ACTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function cancelTicketWithRefund(
+  ticketId: string,
+  reason: string
+): Promise<ActionResult<{ refundId: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  if (!reason.trim()) return { success: false, error: 'A cancellation reason is required' };
+
+  const supabase = getSupabaseAdmin();
+
+  // Fetch ticket with related data
+  const { data: ticket, error: ticketError } = await supabase
+    .from('tickets')
+    .select(`
+      id, status, attendee_name, attendee_email, event_id, tier_id, order_id
+    `)
+    .eq('id', ticketId)
+    .single();
+
+  if (ticketError || !ticket) return { success: false, error: 'Ticket not found' };
+  if (ticket.status !== 'valid') return { success: false, error: `Cannot cancel a ticket with status "${ticket.status}"` };
+
+  // Verify organizer owns this event
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, organizer_id, title, start_at, venue_name, city')
+    .eq('id', ticket.event_id)
+    .single();
+
+  if (!event || event.organizer_id !== user.sub) {
+    return { success: false, error: 'Not authorized to cancel this ticket' };
+  }
+
+  // Fetch order for payment intent
+  const { data: order } = await supabase
+    .from('orders')
+    .select('stripe_payment_intent_id, currency')
+    .eq('id', ticket.order_id)
+    .single();
+
+  if (!order?.stripe_payment_intent_id) {
+    return { success: false, error: 'No payment found for this ticket' };
+  }
+
+  // Fetch tier for unit price
+  const { data: tier } = await supabase
+    .from('ticket_tiers')
+    .select('name, price, currency')
+    .eq('id', ticket.tier_id)
+    .single();
+
+  if (!tier) return { success: false, error: 'Ticket tier not found' };
+
+  const currency = tier.currency || order.currency || 'cad';
+  const refundAmountStripe = toStripeAmount(tier.price, currency);
+
+  // Create partial refund in Stripe
+  let refundId: string;
+  try {
+    const refund = await stripe.refunds.create({
+      payment_intent: order.stripe_payment_intent_id,
+      amount: refundAmountStripe,
+      reason: 'requested_by_customer',
+      reverse_transfer: true,
+      refund_application_fee: true,
+    });
+    refundId = refund.id;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Stripe refund failed';
+    console.error('Stripe refund error:', err);
+    return { success: false, error: message };
+  }
+
+  // Update ticket status
+  const { error: updateError } = await supabase
+    .from('tickets')
+    .update({ status: 'cancelled' })
+    .eq('id', ticketId);
+
+  if (updateError) {
+    console.error('Failed to update ticket status after refund:', updateError);
+    return { success: false, error: 'Refund processed but failed to update ticket status' };
+  }
+
+  // Send cancellation email (non-blocking — don't fail the action if email fails)
+  try {
+    await sendTicketCancellationEmail({
+      to: ticket.attendee_email,
+      attendeeName: ticket.attendee_name,
+      eventTitle: event.title,
+      eventDate: event.start_at,
+      venueName: event.venue_name || '',
+      city: event.city || '',
+      tierName: tier.name,
+      reason: reason.trim(),
+      refundAmount: tier.price,
+      currency,
+    });
+  } catch (emailErr) {
+    console.error('Failed to send cancellation email:', emailErr);
+  }
+
+  return { success: true, data: { refundId } };
 }

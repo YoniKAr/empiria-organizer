@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { Calendar, MapPin, Users, MoreHorizontal, Pencil, Eye, Trash2 } from 'lucide-react';
+import { Calendar, MapPin, Users, Pencil, Eye } from 'lucide-react';
 
 export default async function EventsList() {
   const session = await auth0.getSession();
@@ -136,109 +136,118 @@ function EventCard({ event }: { event: EventWithTiers }) {
     : null;
   const totalRemaining = event.ticket_tiers.reduce((sum, t) => sum + t.remaining_quantity, 0);
 
+  // Drafts → edit page; published/completed → detail page
+  const cardHref =
+    event.status === 'draft'
+      ? `/dashboard/events/create?edit=${event.id}`
+      : `/dashboard/events/${event.id}`;
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors">
-      <div className="flex">
-        {/* Cover Image or Placeholder */}
-        <div className="w-40 h-32 flex-shrink-0 bg-gray-100 relative hidden sm:block">
-          {event.cover_image_url ? (
-            <img
-              src={event.cover_image_url}
-              alt={event.title}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Calendar size={24} className="text-gray-300" />
-            </div>
-          )}
-          <StatusBadge status={event.status} />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 p-4 flex flex-col justify-between min-w-0">
-          <div>
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="font-bold text-gray-900 truncate">{event.title}</h3>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {event.status === 'draft' && (
-                  <Link
-                    href={`/dashboard/events/create?edit=${event.id}`}
-                    className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-100 rounded"
-                    title="Edit"
-                  >
-                    <Pencil size={14} />
-                  </Link>
-                )}
-                {event.status === 'published' && (
-                  <Link
-                    href={`https://shop.empiriaindia.com/events/${event.slug}`}
-                    target="_blank"
-                    className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-100 rounded"
-                    title="View live page"
-                  >
-                    <Eye size={14} />
-                  </Link>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-4 mt-1.5 text-xs text-gray-500">
-              {startDate && (
-                <span className="flex items-center gap-1">
-                  <Calendar size={12} />
-                  {startDate.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
-                </span>
-              )}
-              {(event.venue_name || event.city) && (
-                <span className="flex items-center gap-1">
-                  <MapPin size={12} />
-                  {[event.venue_name, event.city].filter(Boolean).join(', ')}
-                </span>
-              )}
-              {event.ticket_tiers.length > 0 && (
-                <span className="flex items-center gap-1">
-                  <Users size={12} />
-                  {event.total_tickets_sold}/{event.total_capacity || '∞'} sold
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Bottom row */}
-          <div className="flex items-center justify-between mt-3">
-            <div className="flex items-center gap-3">
-              {lowestPrice !== null && (
-                <span className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                  {lowestPrice === 0 ? 'Free' : `From ${formatCurrency(lowestPrice, event.currency)}`}
-                </span>
-              )}
-              {event.ticket_tiers.length > 0 && (
-                <span className="text-xs text-gray-400">
-                  {event.ticket_tiers.length} tier{event.ticket_tiers.length !== 1 ? 's' : ''}
-                  {' · '}
-                  {totalRemaining} remaining
-                </span>
-              )}
-            </div>
-
-            {/* Capacity bar */}
-            {event.total_capacity > 0 && event.status === 'published' && (
-              <div className="flex items-center gap-2">
-                <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${
-                      soldPercent >= 90 ? 'bg-red-500' : soldPercent >= 60 ? 'bg-orange-400' : 'bg-green-500'
-                    }`}
-                    style={{ width: `${Math.min(soldPercent, 100)}%` }}
-                  />
-                </div>
-                <span className="text-[10px] text-gray-400 font-medium">{soldPercent}%</span>
+    <Link href={cardHref} className="block">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors">
+        <div className="flex">
+          {/* Cover Image or Placeholder */}
+          <div className="w-40 h-32 flex-shrink-0 bg-gray-100 relative hidden sm:block">
+            {event.cover_image_url ? (
+              <img
+                src={event.cover_image_url}
+                alt={event.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Calendar size={24} className="text-gray-300" />
               </div>
             )}
+            <StatusBadge status={event.status} />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 p-4 flex flex-col justify-between min-w-0">
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-bold text-gray-900 truncate">{event.title}</h3>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {event.status === 'draft' && (
+                    <span
+                      className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-100 rounded"
+                      title="Edit"
+                    >
+                      <Pencil size={14} />
+                    </span>
+                  )}
+                  {event.status === 'published' && (
+                    <a
+                      href={`https://shop.empiriaindia.com/events/${event.slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-100 rounded"
+                      title="View live page"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Eye size={14} />
+                    </a>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-4 mt-1.5 text-xs text-gray-500">
+                {startDate && (
+                  <span className="flex items-center gap-1">
+                    <Calendar size={12} />
+                    {startDate.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                )}
+                {(event.venue_name || event.city) && (
+                  <span className="flex items-center gap-1">
+                    <MapPin size={12} />
+                    {[event.venue_name, event.city].filter(Boolean).join(', ')}
+                  </span>
+                )}
+                {event.ticket_tiers.length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Users size={12} />
+                    {event.total_tickets_sold}/{event.total_capacity || '∞'} sold
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom row */}
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center gap-3">
+                {lowestPrice !== null && (
+                  <span className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                    {lowestPrice === 0 ? 'Free' : `From ${formatCurrency(lowestPrice, event.currency)}`}
+                  </span>
+                )}
+                {event.ticket_tiers.length > 0 && (
+                  <span className="text-xs text-gray-400">
+                    {event.ticket_tiers.length} tier{event.ticket_tiers.length !== 1 ? 's' : ''}
+                    {' · '}
+                    {totalRemaining} remaining
+                  </span>
+                )}
+              </div>
+
+              {/* Capacity bar */}
+              {event.total_capacity > 0 && event.status === 'published' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        soldPercent >= 90 ? 'bg-red-500' : soldPercent >= 60 ? 'bg-orange-400' : 'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(soldPercent, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-gray-400 font-medium">{soldPercent}%</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
