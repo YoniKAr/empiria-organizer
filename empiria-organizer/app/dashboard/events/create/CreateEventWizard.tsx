@@ -61,6 +61,25 @@ interface Category {
   slug: string;
 }
 
+interface ExistingEvent {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  category_id: string;
+  tags: string[];
+  cover_image_url: string;
+  start_at: string;
+  end_at: string;
+  location_type: 'physical' | 'virtual' | 'hybrid';
+  venue_name: string;
+  address_text: string;
+  city: string;
+  currency: string;
+  status: string;
+  ticket_tiers: TicketTier[];
+}
+
 const STEPS = [
   { id: 0, label: 'Basics', icon: FileText },
   { id: 1, label: 'Date & Venue', icon: Calendar },
@@ -113,26 +132,51 @@ function toSlug(text: string): string {
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function CreateEventWizard({
   categories,
+  existingEvent,
 }: {
   categories: Category[];
+  existingEvent?: ExistingEvent;
 }) {
   const router = useRouter();
+  const isEditing = !!existingEvent;
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<EventFormData>(INITIAL_FORM);
+  const [form, setForm] = useState<EventFormData>(() => {
+    if (existingEvent) {
+      return {
+        title: existingEvent.title,
+        slug: existingEvent.slug,
+        description: existingEvent.description,
+        category_id: existingEvent.category_id,
+        tags: existingEvent.tags,
+        cover_image_url: existingEvent.cover_image_url,
+        start_at: existingEvent.start_at,
+        end_at: existingEvent.end_at,
+        location_type: existingEvent.location_type,
+        venue_name: existingEvent.venue_name,
+        address_text: existingEvent.address_text,
+        city: existingEvent.city,
+        currency: existingEvent.currency,
+        ticket_tiers: existingEvent.ticket_tiers.length > 0
+          ? existingEvent.ticket_tiers
+          : [{ ...DEFAULT_TIER }],
+      };
+    }
+    return INITIAL_FORM;
+  });
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [savedEventId, setSavedEventId] = useState<string | null>(null);
+  const [savedEventId, setSavedEventId] = useState<string | null>(existingEvent?.id || null);
   const [showPreview, setShowPreview] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  // Auto-generate slug from title
+  // Auto-generate slug from title (only for new events)
   useEffect(() => {
-    if (!savedEventId) {
+    if (!savedEventId && !isEditing) {
       setForm((f) => ({ ...f, slug: toSlug(f.title) }));
     }
-  }, [form.title, savedEventId]);
+  }, [form.title, savedEventId, isEditing]);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -226,7 +270,7 @@ export default function CreateEventWizard({
       if (!result.success) throw new Error(result.error);
 
       if (!savedEventId && result.data.id) setSavedEventId(result.data.id);
-      setToast({ message: 'Draft saved successfully', type: 'success' });
+      setToast({ message: isEditing ? 'Changes saved successfully' : 'Draft saved successfully', type: 'success' });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Save failed';
       setToast({ message, type: 'error' });
@@ -247,7 +291,7 @@ export default function CreateEventWizard({
       if (!result.success) throw new Error(result.error);
 
       setToast({ message: 'Event published!', type: 'success' });
-      setTimeout(() => router.push('/dashboard/events'), 1500);
+      setTimeout(() => router.push(isEditing ? `/dashboard/events/${savedEventId}` : '/dashboard/events'), 1500);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Publish failed';
       setToast({ message, type: 'error' });
@@ -300,9 +344,9 @@ export default function CreateEventWizard({
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold">Create New Event</h1>
+          <h1 className="text-2xl font-bold">{isEditing ? 'Edit Event' : 'Create New Event'}</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {savedEventId ? 'Draft saved' : 'Unsaved draft'} · Step {step + 1} of {STEPS.length}
+            {savedEventId ? (isEditing ? 'Editing' : 'Draft saved') : 'Unsaved draft'} · Step {step + 1} of {STEPS.length}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -319,7 +363,7 @@ export default function CreateEventWizard({
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
           >
             <Save size={16} />
-            {saving ? 'Saving...' : 'Save Draft'}
+            {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Save Draft'}
           </button>
         </div>
       </div>
