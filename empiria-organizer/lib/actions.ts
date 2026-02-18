@@ -331,7 +331,8 @@ export async function createStripeStandardConnectLink(): Promise<ActionResult<{ 
 
 export async function cancelTicketWithRefund(
   ticketId: string,
-  reason: string
+  reason: string,
+  releaseToPool: boolean
 ): Promise<ActionResult<{ refundId: string }>> {
   const user = await getAuthUser();
   if (!user) return { success: false, error: 'Unauthorized' };
@@ -403,15 +404,56 @@ export async function cancelTicketWithRefund(
     return { success: false, error: message };
   }
 
-  // Update ticket status
-  const { error: updateError } = await supabase
-    .from('tickets')
-    .update({ status: 'cancelled' })
-    .eq('id', ticketId);
+  if (releaseToPool) {
+    // Delete ticket and restore inventory so the slot can be resold
+    const { error: deleteError } = await supabase
+      .from('tickets')
+      .delete()
+      .eq('id', ticketId);
 
-  if (updateError) {
-    console.error('Failed to update ticket status after refund:', updateError);
-    return { success: false, error: 'Refund processed but failed to update ticket status' };
+    if (deleteError) {
+      console.error('Failed to delete ticket after refund:', deleteError);
+      return { success: false, error: 'Refund processed but failed to remove ticket' };
+    }
+
+    // Increment remaining_quantity on tier
+    const { data: currentTier } = await supabase
+      .from('ticket_tiers')
+      .select('remaining_quantity')
+      .eq('id', ticket.tier_id)
+      .single();
+
+    if (currentTier) {
+      await supabase
+        .from('ticket_tiers')
+        .update({ remaining_quantity: currentTier.remaining_quantity + 1 })
+        .eq('id', ticket.tier_id);
+    }
+
+    // Decrement total_tickets_sold on event
+    const { data: currentEvent } = await supabase
+      .from('events')
+      .select('total_tickets_sold')
+      .eq('id', ticket.event_id)
+      .single();
+
+    if (currentEvent) {
+      await supabase
+        .from('events')
+        .update({ total_tickets_sold: Math.max(0, currentEvent.total_tickets_sold - 1) })
+        .eq('id', ticket.event_id);
+    }
+  } else {
+    // Keep ticket as cancelled — pool stays reduced
+    const { error: updateError } = await supabase
+      .from('tickets')
+      .update({ status: 'cancelled' })
+      .eq('id', ticketId);
+
+    if (updateError) {
+      console.error('Failed to update ticket status after refund:', updateError);
+      return { success: false, error: 'Refund processed but failed to update ticket status' };
+    }
   }
 
   // Send cancellation email (non-blocking — don't fail the action if email fails)

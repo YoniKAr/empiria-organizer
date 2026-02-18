@@ -25,6 +25,7 @@ const statusStyles: Record<string, string> = {
 export function TicketTable({ tickets }: { tickets: Ticket[] }) {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
+  const [releaseToPool, setReleaseToPool] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -32,12 +33,14 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
   function openModal(ticketId: string) {
     setCancellingId(ticketId);
     setReason('');
+    setReleaseToPool(false);
     setFeedback(null);
   }
 
   function closeModal() {
     setCancellingId(null);
     setReason('');
+    setReleaseToPool(false);
     setFeedback(null);
   }
 
@@ -45,9 +48,12 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
     if (!cancellingId || !reason.trim()) return;
 
     startTransition(async () => {
-      const result = await cancelTicketWithRefund(cancellingId, reason);
+      const result = await cancelTicketWithRefund(cancellingId, reason, releaseToPool);
       if (result.success) {
-        setFeedback({ type: 'success', message: 'Ticket cancelled and refund issued.' });
+        const msg = releaseToPool
+          ? 'Ticket cancelled, refund issued, and slot released back to pool.'
+          : 'Ticket cancelled and refund issued.';
+        setFeedback({ type: 'success', message: msg });
         setTimeout(() => {
           closeModal();
           router.refresh();
@@ -152,6 +158,41 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
               placeholder="e.g. Event rescheduled, duplicate purchase, etc."
             />
 
+            {/* Pool option */}
+            <div className="mt-4 space-y-2">
+              <p className="text-sm font-medium text-gray-700">What happens to this ticket slot?</p>
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 has-[:checked]:border-black has-[:checked]:bg-gray-50">
+                <input
+                  type="radio"
+                  name="poolOption"
+                  checked={!releaseToPool}
+                  onChange={() => setReleaseToPool(false)}
+                  className="mt-0.5 accent-black"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Keep cancelled</span>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Ticket stays on record as cancelled. Total capacity is reduced permanently.
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 has-[:checked]:border-black has-[:checked]:bg-gray-50">
+                <input
+                  type="radio"
+                  name="poolOption"
+                  checked={releaseToPool}
+                  onChange={() => setReleaseToPool(true)}
+                  className="mt-0.5 accent-black"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Release back to pool</span>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Ticket is removed and the slot becomes available for someone else to purchase.
+                  </p>
+                </div>
+              </label>
+            </div>
+
             {feedback && (
               <p
                 className={`mt-3 text-sm font-medium ${
@@ -168,7 +209,7 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
                 disabled={isPending}
                 className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
               >
-                Cancel
+                Go Back
               </button>
               <button
                 onClick={handleConfirm}
