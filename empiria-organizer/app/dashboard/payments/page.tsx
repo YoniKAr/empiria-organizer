@@ -14,7 +14,7 @@ export default async function PaymentsPage({
 
   const { data: user } = await supabase
     .from('users')
-    .select('stripe_account_id, stripe_onboarding_completed, default_currency')
+    .select('stripe_account_id, stripe_onboarding_completed, stripe_account_type, default_currency')
     .eq('auth0_id', session?.user.sub)
     .single();
 
@@ -68,8 +68,8 @@ export default async function PaymentsPage({
         <div className="bg-orange-50 border border-orange-200 p-6 rounded-xl mb-8">
           <h2 className="font-bold text-orange-800 text-lg mb-2">Connect with Stripe</h2>
           <p className="text-orange-700 text-sm mb-4">
-            To sell tickets and receive payouts, you must connect a Stripe account.
-            We use Stripe Express for fast, secure onboarding.
+            To sell tickets and receive payouts, you need a Stripe account.
+            Create a new one for quick setup, or connect your existing Stripe account.
           </p>
           <StripeConnectButton />
         </div>
@@ -77,10 +77,15 @@ export default async function PaymentsPage({
         <div className="bg-green-50 border border-green-200 p-6 rounded-xl mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-bold text-green-800 text-lg">Stripe Connected ✅</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-green-800 text-lg">Stripe Connected ✅</h2>
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 capitalize">
+                  {user?.stripe_account_type || 'express'}
+                </span>
+              </div>
               <p className="text-green-700 text-sm">Your payouts are active.</p>
             </div>
-            <StripeConnectButton isConnected />
+            <StripeConnectButton isConnected accountType={user?.stripe_account_type} />
           </div>
           {totalRevenue > 0 && (
             <div className="mt-4 pt-4 border-t border-green-200">

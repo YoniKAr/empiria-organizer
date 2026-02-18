@@ -247,7 +247,7 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
 
   const { data: profile } = await supabase
     .from('users')
-    .select('stripe_account_id, stripe_onboarding_completed, email')
+    .select('stripe_account_id, stripe_onboarding_completed, stripe_account_type, email')
     .eq('auth0_id', user.sub)
     .single();
 
@@ -265,7 +265,6 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
         card_payments: { requested: true },
         transfers: { requested: true },
       },
-      business_type: 'individual',
       metadata: {
         auth0_id: user.sub,
         platform: 'empiria',
@@ -276,12 +275,15 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
 
     await supabase
       .from('users')
-      .update({ stripe_account_id: accountId })
+      .update({ stripe_account_id: accountId, stripe_account_type: 'express' })
       .eq('auth0_id', user.sub);
   }
 
   // Already onboarded → return dashboard link
   if (profile.stripe_onboarding_completed) {
+    if (profile.stripe_account_type === 'standard') {
+      return { success: true, data: { url: 'https://dashboard.stripe.com', type: 'dashboard' } };
+    }
     const loginLink = await stripe.accounts.createLoginLink(accountId);
     return { success: true, data: { url: loginLink.url, type: 'dashboard' } };
   }
@@ -297,4 +299,26 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
   });
 
   return { success: true, data: { url: accountLink.url, type: 'onboarding' } };
+}
+
+export async function createStripeStandardConnectLink(): Promise<ActionResult<{ url: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const clientId = process.env.STRIPE_CLIENT_ID;
+  if (!clientId) return { success: false, error: 'Stripe OAuth is not configured' };
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://organizer.empiriaindia.com';
+  const redirectUri = `${baseUrl}/api/stripe/oauth-callback`;
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    scope: 'read_write',
+    redirect_uri: redirectUri,
+    state: user.sub,
+  });
+
+  const url = `https://connect.stripe.com/oauth/authorize?${params.toString()}`;
+  return { success: true, data: { url } };
 }

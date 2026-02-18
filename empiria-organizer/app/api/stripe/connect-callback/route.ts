@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
         .from('users')
         .update({
           stripe_onboarding_completed: true,
+          stripe_account_type: 'express',
           default_currency: account.default_currency || 'cad',
         })
         .eq('auth0_id', session.user.sub);
