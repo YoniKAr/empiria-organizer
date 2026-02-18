@@ -183,7 +183,6 @@ function EventCard({ event }: { event: EventWithTiers }) {
                       rel="noopener noreferrer"
                       className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-100 rounded"
                       title="View live page"
-                      onClick={(e) => e.stopPropagation()}
                     >
                       <Eye size={14} />
                     </a>
