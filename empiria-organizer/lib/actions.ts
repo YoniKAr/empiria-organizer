@@ -237,6 +237,104 @@ export async function publishEvent(eventId: string): Promise<ActionResult<{ id: 
   return { success: true, data: { id: eventId } };
 }
 
+export async function unpublishEvent(eventId: string): Promise<ActionResult<{ id: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const supabase = getSupabaseAdmin();
+
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, organizer_id, status')
+    .eq('id', eventId)
+    .single();
+
+  if (!event || event.organizer_id !== user.sub) {
+    return { success: false, error: 'Not found' };
+  }
+
+  if (event.status !== 'published') {
+    return { success: false, error: `Cannot unpublish event with status "${event.status}"` };
+  }
+
+  const { error } = await supabase
+    .from('events')
+    .update({ status: 'draft' })
+    .eq('id', eventId);
+
+  if (error) return { success: false, error: error.message };
+
+  return { success: true, data: { id: eventId } };
+}
+
+export async function cancelEvent(eventId: string): Promise<ActionResult<{ id: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const supabase = getSupabaseAdmin();
+
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, organizer_id, status')
+    .eq('id', eventId)
+    .single();
+
+  if (!event || event.organizer_id !== user.sub) {
+    return { success: false, error: 'Not found' };
+  }
+
+  if (event.status === 'cancelled') {
+    return { success: false, error: 'Event is already cancelled' };
+  }
+
+  const { error } = await supabase
+    .from('events')
+    .update({ status: 'cancelled' })
+    .eq('id', eventId);
+
+  if (error) return { success: false, error: error.message };
+
+  return { success: true, data: { id: eventId } };
+}
+
+export async function deleteEvent(eventId: string): Promise<ActionResult<{ id: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const supabase = getSupabaseAdmin();
+
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, organizer_id, status, total_tickets_sold')
+    .eq('id', eventId)
+    .single();
+
+  if (!event || event.organizer_id !== user.sub) {
+    return { success: false, error: 'Not found' };
+  }
+
+  // Only allow deleting drafts or cancelled events with no sold tickets
+  if (event.status === 'published' || event.status === 'completed') {
+    return { success: false, error: 'Cannot delete a published or completed event. Unpublish or cancel it first.' };
+  }
+
+  if (event.total_tickets_sold > 0) {
+    return { success: false, error: 'Cannot delete an event that has sold tickets. Cancel it instead.' };
+  }
+
+  // Delete ticket tiers first (FK dependency)
+  await supabase.from('ticket_tiers').delete().eq('event_id', eventId);
+
+  const { error } = await supabase
+    .from('events')
+    .delete()
+    .eq('id', eventId);
+
+  if (error) return { success: false, error: error.message };
+
+  return { success: true, data: { id: eventId } };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // STRIPE ACTIONS
 // ═══════════════════════════════════════════════════════════════════════════

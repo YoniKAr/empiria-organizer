@@ -136,11 +136,8 @@ function EventCard({ event }: { event: EventWithTiers }) {
     : null;
   const totalRemaining = event.ticket_tiers.reduce((sum, t) => sum + t.remaining_quantity, 0);
 
-  // Drafts → edit page; published/completed → detail page
-  const cardHref =
-    event.status === 'draft'
-      ? `/dashboard/events/create?edit=${event.id}`
-      : `/dashboard/events/${event.id}`;
+  // All events → detail page (management hub)
+  const cardHref = `/dashboard/events/${event.id}`;
 
   return (
     <Link href={cardHref} className="block">

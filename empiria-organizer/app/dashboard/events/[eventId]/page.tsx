@@ -1,10 +1,10 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Calendar, MapPin, Users } from 'lucide-react';
 import { TicketTable } from './TicketTable';
+import { EventActions } from './EventActions';
 
 interface PageProps {
   params: Promise<{ eventId: string }>;
@@ -87,7 +87,7 @@ export default async function EventDetailPage({ params }: PageProps) {
 
       {/* Event Header */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-2xl font-bold text-gray-900">{event.title}</h1>
@@ -130,6 +130,15 @@ export default async function EventDetailPage({ params }: PageProps) {
               View live page →
             </a>
           )}
+        </div>
+
+        {/* Management Actions */}
+        <div className="border-t border-gray-100 pt-4">
+          <EventActions
+            eventId={event.id}
+            status={event.status}
+            hasTicketsSold={event.total_tickets_sold > 0}
+          />
         </div>
       </div>
 
