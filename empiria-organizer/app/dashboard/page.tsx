@@ -10,7 +10,7 @@ export default async function DashboardHome() {
   if (!session?.user) redirect('/auth/login?returnTo=/dashboard');
 
   const supabase = getSupabaseAdmin();
-  const orgId = session.user.sub;
+  const orgId = session.user.sub; // 
 
   // Fetch profile + all organizer data in parallel
   const [profileRes, eventsRes, ordersRes, ticketsRes] = await Promise.all([
@@ -133,10 +133,10 @@ export default async function DashboardHome() {
                     <p className="text-xs text-gray-500">
                       {event.start_at
                         ? new Date(event.start_at).toLocaleDateString('en-CA', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
                         : 'No date set'}
                     </p>
                   </div>
