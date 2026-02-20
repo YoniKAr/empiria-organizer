@@ -27,7 +27,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-6 border-b border-gray-100">
-          <img src="/Empiria-plus-editable-1 2.png" alt="Empiria Events" className="h-10 w-auto" />
+          <img src="/logo.png" alt="Empiria Events" className="h-10 w-auto" />
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
