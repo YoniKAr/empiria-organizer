@@ -33,12 +33,12 @@ export default async function EventsList() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold">My Events</h1>
+          <h1 className="text-2xl font-bold text-[#F98C1F]">My Events</h1>
           <p className="text-sm text-gray-500 mt-1">{allEvents.length} event{allEvents.length !== 1 ? 's' : ''} total</p>
         </div>
         <Link
           href="/dashboard/events/create"
-          className="bg-[#F98C1F] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800"
+          className="bg-[#F98C1F] text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-[#e07b10] hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
         >
           + Create Event
         </Link>

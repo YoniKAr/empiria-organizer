@@ -38,7 +38,7 @@ export default async function PaymentsPage({
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold mb-6">Payments & Payouts</h1>
+      <h1 className="text-2xl font-bold mb-6 text-[#e07b10]">Payments & Payouts</h1>
 
       {/* Status Messages */}
       {params.reason === 'stripe_required' && (
@@ -98,7 +98,7 @@ export default async function PaymentsPage({
       )}
 
       {/* Transaction History */}
-      <h2 className="text-lg font-bold mb-4">Transaction History</h2>
+      <h2 className="text-lg font-bold mb-4 text-[#e07b10]">Transaction History</h2>
       {!orders || orders.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 h-40 flex items-center justify-center text-gray-400 text-sm">
           No transactions yet
@@ -129,13 +129,12 @@ export default async function PaymentsPage({
                   </td>
                   <td className="py-3 px-4">
                     <span
-                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                        order.status === 'completed'
+                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${order.status === 'completed'
                           ? 'bg-green-100 text-green-700'
                           : order.status === 'pending'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
                     >
                       {order.status}
                     </span>
