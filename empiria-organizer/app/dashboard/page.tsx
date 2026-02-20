@@ -61,26 +61,6 @@ export default async function DashboardHome() {
     .filter((o) => o.created_at >= monthStart)
     .reduce((sum, o) => sum + Number(o.organizer_payout_amount), 0);
 
-  // Build cumulative revenue chart data (sorted by date)
-  const revenueByDay = orders
-    .slice()
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .reduce<Record<string, number>>((acc, o) => {
-      const day = o.created_at.slice(0, 10); // YYYY-MM-DD
-      acc[day] = (acc[day] || 0) + Number(o.organizer_payout_amount);
-      return acc;
-    }, {});
-
-  let cumulative = 0;
-  const chartData = Object.entries(revenueByDay).map(([date, amount]) => {
-    cumulative += amount;
-    const d = new Date(date);
-    return {
-      date: d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }),
-      revenue: Math.round(cumulative * 100) / 100,
-      rawDate: date,
-    };
-  });
 
   return (
     <div>
@@ -135,7 +115,7 @@ export default async function DashboardHome() {
           </div>
           <span className="text-2xl font-bold text-[#F98C1F]">{formatCurrency(totalRevenue, currency)}</span>
         </div>
-        <RevenueChart data={chartData} currency={currency} />
+        <RevenueChart orders={orders} currency={currency} />
       </div>
 
       {/* Recent Events */}

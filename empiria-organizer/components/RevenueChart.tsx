@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useMemo } from 'react';
 import {
     AreaChart,
     Area,
@@ -10,16 +11,45 @@ import {
     ResponsiveContainer,
 } from 'recharts';
 
-type DataPoint = {
-    date: string;       // formatted label e.g. "Feb 1"
-    revenue: number;    // cumulative revenue at that date
-    rawDate: string;    // ISO date string for tooltip
+export type RawOrder = {
+    created_at: string;
+    organizer_payout_amount: number | string;
 };
 
+type Period = '7D' | '30D' | '3M' | '1Y' | 'All';
+
 type Props = {
-    data: DataPoint[];
+    orders: RawOrder[];
     currency: string;
 };
+
+const PERIODS: { label: string; value: Period }[] = [
+    { label: '7D', value: '7D' },
+    { label: '30D', value: '30D' },
+    { label: '3M', value: '3M' },
+    { label: '1Y', value: '1Y' },
+    { label: 'All', value: 'All' },
+];
+
+// Dummy orders for when no real data exists
+const DUMMY_ORDERS: RawOrder[] = [
+    ...Array.from({ length: 14 }, (_, i) => ({
+        created_at: new Date(Date.now() - (13 - i) * 24 * 60 * 60 * 1000).toISOString(),
+        organizer_payout_amount: 200 + Math.random() * 600,
+    })),
+    ...Array.from({ length: 30 }, (_, i) => ({
+        created_at: new Date(Date.now() - (60 - i) * 24 * 60 * 60 * 1000).toISOString(),
+        organizer_payout_amount: 300 + Math.random() * 800,
+    })),
+    ...Array.from({ length: 20 }, (_, i) => ({
+        created_at: new Date(Date.now() - (150 - i * 3) * 24 * 60 * 60 * 1000).toISOString(),
+        organizer_payout_amount: 400 + Math.random() * 1000,
+    })),
+    ...Array.from({ length: 14 }, (_, i) => ({
+        created_at: new Date(Date.now() - (365 - i * 20) * 24 * 60 * 60 * 1000).toISOString(),
+        organizer_payout_amount: 500 + Math.random() * 1200,
+    })),
+];
 
 function formatCurrencyLocal(amount: number, currency: string) {
     return new Intl.NumberFormat('en-CA', {
@@ -30,10 +60,10 @@ function formatCurrencyLocal(amount: number, currency: string) {
     }).format(amount);
 }
 
-// Custom tooltip shown on hover
 function CustomTooltip({
     active,
     payload,
+    label,
     currency,
 }: {
     active?: boolean;
@@ -42,80 +72,136 @@ function CustomTooltip({
     currency: string;
 }) {
     if (!active || !payload || payload.length === 0) return null;
-
-    const point = payload[0];
     return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-4 py-3 text-sm">
-            <p className="font-bold text-gray-900">
-                {formatCurrencyLocal(point.value, currency)}
-            </p>
+            <p className="text-gray-500 text-xs mb-1">{label}</p>
+            <p className="font-bold text-gray-900">{formatCurrencyLocal(payload[0].value, currency)}</p>
         </div>
     );
 }
 
-const DUMMY_DATA = [
-    { date: 'Sep 1', revenue: 420, rawDate: '2024-09-01' },
-    { date: 'Sep 8', revenue: 950, rawDate: '2024-09-08' },
-    { date: 'Sep 15', revenue: 1800, rawDate: '2024-09-15' },
-    { date: 'Oct 1', revenue: 2600, rawDate: '2024-10-01' },
-    { date: 'Oct 12', revenue: 3100, rawDate: '2024-10-12' },
-    { date: 'Oct 28', revenue: 4750, rawDate: '2024-10-28' },
-    { date: 'Nov 5', revenue: 5200, rawDate: '2024-11-05' },
-    { date: 'Nov 20', revenue: 6800, rawDate: '2024-11-20' },
-    { date: 'Dec 3', revenue: 8400, rawDate: '2024-12-03' },
-    { date: 'Dec 18', revenue: 9100, rawDate: '2024-12-18' },
-    { date: 'Jan 6', revenue: 11200, rawDate: '2025-01-06' },
-    { date: 'Jan 22', revenue: 13500, rawDate: '2025-01-22' },
-    { date: 'Feb 5', revenue: 15800, rawDate: '2025-02-05' },
-    { date: 'Feb 19', revenue: 18200, rawDate: '2025-02-19' },
-];
-
-export default function RevenueChart({ data, currency }: Props) {
-    const isDummy = data.length === 0;
-    const displayData = isDummy ? DUMMY_DATA : data;
-
-    return (
-        <>
-
-            <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={displayData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <defs>
-                        <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#F98C1F" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="#F98C1F" stopOpacity={0} />
-                        </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                    <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 11, fill: '#9ca3af' }}
-                        axisLine={false}
-                        tickLine={false}
-                        interval="preserveStartEnd"
-                    />
-                    <YAxis
-                        tick={{ fontSize: 11, fill: '#9ca3af' }}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={(v) => formatCurrencyLocal(v, currency)}
-                        width={70}
-                    />
-                    <Tooltip
-                        content={<CustomTooltip currency={currency} />}
-                        cursor={{ stroke: '#F98C1F', strokeWidth: 1, strokeDasharray: '4 4' }}
-                    />
-                    <Area
-                        type="monotone"
-                        dataKey="revenue"
-                        stroke="#F98C1F"
-                        strokeWidth={2.5}
-                        fill="url(#revenueGradient)"
-                        dot={false}
-                        activeDot={{ r: 5, fill: '#F98C1F', stroke: '#fff', strokeWidth: 2 }}
-                    />
-                </AreaChart>
-            </ResponsiveContainer>
-        </>
-    );
+function getPeriodStart(period: Period): Date | null {
+    const now = new Date();
+    switch (period) {
+        case '7D': return new Date(now.getTime() - 7 * 86400000);
+        case '30D': return new Date(now.getTime() - 30 * 86400000);
+        case '3M': return new Date(now.getTime() - 90 * 86400000);
+        case '1Y': return new Date(now.getTime() - 365 * 86400000);
+        case 'All': return null;
+    }
 }
 
+function getGroupKey(date: Date, period: Period): string {
+    if (period === '7D' || period === '30D') {
+        return date.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+    }
+    if (period === '3M') {
+        // Group by week
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - date.getDay());
+        return weekStart.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+    }
+    // 1Y or All → group by month
+    return date.toLocaleDateString('en-CA', { month: 'short', year: '2-digit' });
+}
+
+export default function RevenueChart({ orders, currency }: Props) {
+    const [period, setPeriod] = useState<Period>('All');
+
+    const isDummy = orders.length === 0;
+    const sourceOrders = isDummy ? DUMMY_ORDERS : orders;
+
+    const chartData = useMemo(() => {
+        const start = getPeriodStart(period);
+
+        // Filter by period
+        const filtered = sourceOrders.filter((o) => {
+            if (!start) return true;
+            return new Date(o.created_at) >= start;
+        });
+
+        // Sort ascending
+        const sorted = [...filtered].sort((a, b) =>
+            a.created_at.localeCompare(b.created_at)
+        );
+
+        // Group by period bucket (non-cumulative sum per bucket)
+        const grouped: Record<string, number> = {};
+        for (const o of sorted) {
+            const key = getGroupKey(new Date(o.created_at), period);
+            grouped[key] = (grouped[key] || 0) + Number(o.organizer_payout_amount);
+        }
+
+        // Build cumulative data
+        let cumulative = 0;
+        return Object.entries(grouped).map(([date, amount]) => {
+            cumulative += amount;
+            return { date, revenue: Math.round(cumulative * 100) / 100 };
+        });
+    }, [sourceOrders, period]);
+
+    return (
+        <div>
+            {/* Period Toggle */}
+            <div className="flex gap-1 mb-4">
+                {PERIODS.map((p) => (
+                    <button
+                        key={p.value}
+                        onClick={() => setPeriod(p.value)}
+                        className={`px-3 py-1 text-xs font-semibold rounded-full transition-all duration-150 ${period === p.value
+                                ? 'bg-[#F98C1F] text-white shadow-sm'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            }`}
+                    >
+                        {p.label}
+                    </button>
+                ))}
+            </div>
+
+            {chartData.length === 0 ? (
+                <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">
+                    No data for this period
+                </div>
+            ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                            <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#F98C1F" stopOpacity={0.25} />
+                                <stop offset="95%" stopColor="#F98C1F" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                        <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 11, fill: '#9ca3af' }}
+                            axisLine={false}
+                            tickLine={false}
+                            interval="preserveStartEnd"
+                        />
+                        <YAxis
+                            tick={{ fontSize: 11, fill: '#9ca3af' }}
+                            axisLine={false}
+                            tickLine={false}
+                            tickFormatter={(v) => formatCurrencyLocal(v, currency)}
+                            width={70}
+                        />
+                        <Tooltip
+                            content={<CustomTooltip currency={currency} />}
+                            cursor={{ stroke: '#F98C1F', strokeWidth: 1, strokeDasharray: '4 4' }}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="revenue"
+                            stroke="#F98C1F"
+                            strokeWidth={2.5}
+                            fill="url(#revenueGradient)"
+                            dot={false}
+                            activeDot={{ r: 5, fill: '#F98C1F', stroke: '#fff', strokeWidth: 2 }}
+                        />
+                    </AreaChart>
+                </ResponsiveContainer>
+            )}
+        </div>
+    );
+}
