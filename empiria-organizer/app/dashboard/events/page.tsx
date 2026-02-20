@@ -38,7 +38,7 @@ export default async function EventsList() {
         </div>
         <Link
           href="/dashboard/events/create"
-          className="bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800"
+          className="bg-[#F98C1F] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800"
         >
           + Create Event
         </Link>
@@ -230,9 +230,8 @@ function EventCard({ event }: { event: EventWithTiers }) {
                 <div className="flex items-center gap-2">
                   <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${
-                        soldPercent >= 90 ? 'bg-red-500' : soldPercent >= 60 ? 'bg-orange-400' : 'bg-green-500'
-                      }`}
+                      className={`h-full rounded-full ${soldPercent >= 90 ? 'bg-red-500' : soldPercent >= 60 ? 'bg-orange-400' : 'bg-green-500'
+                        }`}
                       style={{ width: `${Math.min(soldPercent, 100)}%` }}
                     />
                   </div>
@@ -257,9 +256,8 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`absolute top-2 left-2 text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-        styles[status] || styles.draft
-      }`}
+      className={`absolute top-2 left-2 text-[10px] font-bold uppercase px-2 py-0.5 rounded ${styles[status] || styles.draft
+        }`}
     >
       {status}
     </span>
