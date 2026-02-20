@@ -4,6 +4,7 @@ import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { TrendingUp, Ticket, CalendarDays, Eye, ArrowRight } from 'lucide-react';
+import RevenueChart from '@/components/RevenueChart';
 
 export default async function DashboardHome() {
   const session = await auth0.getSession();
@@ -60,13 +61,34 @@ export default async function DashboardHome() {
     .filter((o) => o.created_at >= monthStart)
     .reduce((sum, o) => sum + Number(o.organizer_payout_amount), 0);
 
+  // Build cumulative revenue chart data (sorted by date)
+  const revenueByDay = orders
+    .slice()
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .reduce<Record<string, number>>((acc, o) => {
+      const day = o.created_at.slice(0, 10); // YYYY-MM-DD
+      acc[day] = (acc[day] || 0) + Number(o.organizer_payout_amount);
+      return acc;
+    }, {});
+
+  let cumulative = 0;
+  const chartData = Object.entries(revenueByDay).map(([date, amount]) => {
+    cumulative += amount;
+    const d = new Date(date);
+    return {
+      date: d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }),
+      revenue: Math.round(cumulative * 100) / 100,
+      rawDate: date,
+    };
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-[#F98C1F]">Organizer Overview</h1>
         <Link
           href="/dashboard/events/create"
-          className="flex items-center gap-2 bg-[#F98C1F] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800"
+          className="flex items-center gap-2 bg-[#F98C1F] text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-[#e07b10] hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
         >
           + Create Event
         </Link>
@@ -102,6 +124,18 @@ export default async function DashboardHome() {
           icon={<Eye size={18} />}
           color="purple"
         />
+      </div>
+
+      {/* Revenue Chart */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-bold text-gray-900">All-Time Revenue</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Cumulative organizer payout over time</p>
+          </div>
+          <span className="text-2xl font-bold text-[#F98C1F]">{formatCurrency(totalRevenue, currency)}</span>
+        </div>
+        <RevenueChart data={chartData} currency={currency} />
       </div>
 
       {/* Recent Events */}
@@ -179,7 +213,7 @@ function StatCard({
   };
 
   return (
-    <div className="bg-white p-5 rounded-xl border border-gray-200">
+    <div className="bg-white p-5 rounded-xl border border-gray-200 transition-all duration-200 hover:shadow-lg hover:-translate-y-1 hover:border-gray-300 cursor-default">
       <div className="flex items-center justify-between mb-3">
         <span className="text-gray-500 text-sm font-medium">{label}</span>
         <div className={`p-2 rounded-lg ${colors[color]}`}>{icon}</div>
