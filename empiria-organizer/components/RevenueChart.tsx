@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
     AreaChart,
     Area,
@@ -31,25 +31,16 @@ const PERIODS: { label: string; value: Period }[] = [
     { label: 'All', value: 'All' },
 ];
 
-// Dummy orders for when no real data exists
-const DUMMY_ORDERS: RawOrder[] = [
-    ...Array.from({ length: 14 }, (_, i) => ({
-        created_at: new Date(Date.now() - (13 - i) * 24 * 60 * 60 * 1000).toISOString(),
-        organizer_payout_amount: 200 + Math.random() * 600,
-    })),
-    ...Array.from({ length: 30 }, (_, i) => ({
-        created_at: new Date(Date.now() - (60 - i) * 24 * 60 * 60 * 1000).toISOString(),
-        organizer_payout_amount: 300 + Math.random() * 800,
-    })),
-    ...Array.from({ length: 20 }, (_, i) => ({
-        created_at: new Date(Date.now() - (150 - i * 3) * 24 * 60 * 60 * 1000).toISOString(),
-        organizer_payout_amount: 400 + Math.random() * 1000,
-    })),
-    ...Array.from({ length: 14 }, (_, i) => ({
-        created_at: new Date(Date.now() - (365 - i * 20) * 24 * 60 * 60 * 1000).toISOString(),
-        organizer_payout_amount: 500 + Math.random() * 1200,
-    })),
-];
+// ─── Supabase Integration Note ───────────────────────────────────────────────
+// When real data is available, pass it from page.tsx like:
+//   const { data: orders } = await supabase
+//       .from('orders')
+//       .select('created_at, organizer_payout_amount')
+//       .eq('status', 'completed')
+//       .eq('events.organizer_id', orgId);
+// The `orders` prop already matches this shape. Dummy data is used automatically
+// when orders.length === 0 (i.e., no real Supabase data yet).
+// ─────────────────────────────────────────────────────────────────────────────
 
 function formatCurrencyLocal(amount: number, currency: string) {
     return new Intl.NumberFormat('en-CA', {
@@ -108,8 +99,48 @@ function getGroupKey(date: Date, period: Period): string {
 export default function RevenueChart({ orders, currency }: Props) {
     const [period, setPeriod] = useState<Period>('All');
 
+    // ── Live clock ──────────────────────────────────────────────────────────
+    const [now, setNow] = useState(() => new Date());
+    useEffect(() => {
+        const timer = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+    const liveTimestamp = now.toLocaleString('en-CA', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+    });
+    // ────────────────────────────────────────────────────────────────────────
+
+    // Dummy data generated relative to current time — replaced automatically
+    // when real Supabase orders are passed via the `orders` prop.
     const isDummy = orders.length === 0;
-    const sourceOrders = isDummy ? DUMMY_ORDERS : orders;
+    const sourceOrders = useMemo<RawOrder[]>(() => {
+        if (!isDummy) return orders;
+        return [
+            ...Array.from({ length: 14 }, (_, i) => ({
+                created_at: new Date(now.getTime() - (13 - i) * 24 * 60 * 60 * 1000).toISOString(),
+                organizer_payout_amount: 200 + Math.random() * 600,
+            })),
+            ...Array.from({ length: 30 }, (_, i) => ({
+                created_at: new Date(now.getTime() - (60 - i) * 24 * 60 * 60 * 1000).toISOString(),
+                organizer_payout_amount: 300 + Math.random() * 800,
+            })),
+            ...Array.from({ length: 20 }, (_, i) => ({
+                created_at: new Date(now.getTime() - (150 - i * 3) * 24 * 60 * 60 * 1000).toISOString(),
+                organizer_payout_amount: 400 + Math.random() * 1000,
+            })),
+            ...Array.from({ length: 14 }, (_, i) => ({
+                created_at: new Date(now.getTime() - (365 - i * 20) * 24 * 60 * 60 * 1000).toISOString(),
+                organizer_payout_amount: 500 + Math.random() * 1200,
+            })),
+        ];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDummy, orders]); // Intentionally NOT depending on `now` — dummy data is fixed at mount
 
     const chartData = useMemo(() => {
         const start = getPeriodStart(period);
@@ -142,20 +173,27 @@ export default function RevenueChart({ orders, currency }: Props) {
 
     return (
         <div>
-            {/* Period Toggle */}
-            <div className="flex gap-1 mb-4">
-                {PERIODS.map((p) => (
-                    <button
-                        key={p.value}
-                        onClick={() => setPeriod(p.value)}
-                        className={`px-3 py-1 text-xs font-semibold rounded-full transition-all duration-150 ${period === p.value
-                                ? 'bg-[#F98C1F] text-white shadow-sm'
-                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                            }`}
-                    >
-                        {p.label}
-                    </button>
-                ))}
+            {/* Period Toggle + Live Clock */}
+            <div className="flex items-center justify-between gap-2 mb-4">
+                <div className="flex gap-1">
+                    {PERIODS.map((p) => (
+                        <button
+                            key={p.value}
+                            onClick={() => setPeriod(p.value)}
+                            className={`px-3 py-1 text-xs font-semibold rounded-full transition-all duration-150 ${period === p.value
+                                    ? 'bg-[#F98C1F] text-white shadow-sm'
+                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                }`}
+                        >
+                            {p.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                    {liveTimestamp}
+                    {isDummy && <span className="ml-1 text-[10px] text-orange-400 font-sans font-medium">(demo)</span>}
+                </div>
             </div>
 
             {chartData.length === 0 ? (
