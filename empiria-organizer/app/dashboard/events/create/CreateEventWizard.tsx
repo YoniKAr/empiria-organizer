@@ -428,7 +428,7 @@ export default function CreateEventWizard({
           <ChevronLeft size={16} />
           Back
         </button>
-        <div className="flex gap-3">
+        <div className="flex gap-3 text-[#F98C1F]">
           {step < STEPS.length - 1 ? (
             <button
               onClick={nextStep}
