@@ -561,12 +561,13 @@ function StepBasics({
 
         <div>
           <FieldLabel>Tags</FieldLabel>
-          <div className="flex gap-2 mb-2">
+          <div className="flex gap-2 mb-2 ">
             <Input
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
               placeholder="Add a tag and press Enter"
+              className="text-black"
             />
             <button
               onClick={addTag}
@@ -879,8 +880,8 @@ function StepReview({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left column */}
-        <div className="space-y-4">
-          <ReviewSection title="Basics">
+        <div className="space-y-4x">
+          <ReviewSection title="Basics" >
             <ReviewRow label="Title" value={form.title || '—'} />
             <ReviewRow label="Slug" value={form.slug || '—'} />
             <ReviewRow label="Category" value={cat?.name || 'None'} />
