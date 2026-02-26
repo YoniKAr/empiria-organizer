@@ -432,7 +432,7 @@ export default function CreateEventWizard({
           {step < STEPS.length - 1 ? (
             <button
               onClick={nextStep}
-              className="flex items-center gap-2 px-6 py-2.5 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800"
+              className="flex items-center gap-2 px-6 py-2.5 bg-[#F98C1F] text-white rounded-lg text-sm font-medium hover:bg-[#F98C1F]/80"
             >
               Continue
               <ChevronRight size={16} />
