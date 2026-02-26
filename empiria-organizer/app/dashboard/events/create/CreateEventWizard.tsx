@@ -527,6 +527,7 @@ function StepBasics({
               onChange={(e) => updateField('slug', toSlug(e.target.value))}
               placeholder="summer-music-festival"
               error={errors.slug}
+              className="text-black"
             />
           </div>
         </div>
@@ -538,7 +539,7 @@ function StepBasics({
             onChange={(e) => updateField('description', e.target.value)}
             rows={5}
             placeholder="Tell attendees what to expect at your event..."
-            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-black resize-none"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-black resize-none text-black"
           />
         </div>
 
@@ -547,7 +548,7 @@ function StepBasics({
           <select
             value={form.category_id}
             onChange={(e) => updateField('category_id', e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-black bg-white"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-black bg-white text-black"
           >
             <option value="">Select a category</option>
             {categories.map((c) => (
