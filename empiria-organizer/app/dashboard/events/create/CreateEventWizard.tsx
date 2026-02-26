@@ -333,9 +333,8 @@ export default function CreateEventWizard({
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg ${
-            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-          }`}
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+            }`}
         >
           {toast.message}
         </div>
@@ -376,13 +375,12 @@ export default function CreateEventWizard({
             onClick={() => {
               if (s.id < step || validateStep(step)) setStep(s.id);
             }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-colors ${
-              s.id === step
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-colors ${s.id === step
                 ? 'bg-black text-white'
                 : s.id < step
-                ? 'bg-green-50 text-green-700'
-                : 'text-gray-400 hover:text-gray-600'
-            }`}
+                  ? 'bg-green-50 text-green-700'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
           >
             <s.icon size={14} />
             <span className="hidden sm:inline">{s.label}</span>
@@ -475,9 +473,8 @@ function Input({
   return (
     <input
       {...props}
-      className={`w-full border rounded-lg px-3 py-2.5 text-sm outline-none transition-colors focus:border-black ${
-        error ? 'border-red-300 bg-red-50' : 'border-gray-200'
-      } ${props.className || ''}`}
+      className={`w-full border rounded-lg px-3 py-2.5 text-sm outline-none transition-colors focus:border-black ${error ? 'border-red-300 bg-red-50' : 'border-gray-200'
+        } ${props.className || ''}`}
     />
   );
 }
@@ -505,7 +502,7 @@ function StepBasics({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold mb-1">Event Details</h2>
+        <h2 className="text-lg font-bold mb-1 text-[#F98C1F]">Event Details</h2>
         <p className="text-sm text-gray-500">Start with the basics about your event.</p>
       </div>
 
@@ -648,11 +645,10 @@ function StepDateVenue({
               key={opt.value}
               type="button"
               onClick={() => updateField('location_type', opt.value as EventFormData['location_type'])}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border text-sm font-medium transition-colors ${
-                form.location_type === opt.value
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border text-sm font-medium transition-colors ${form.location_type === opt.value
                   ? 'border-black bg-black text-white'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300'
-              }`}
+                }`}
             >
               <opt.icon size={16} />
               {opt.label}
