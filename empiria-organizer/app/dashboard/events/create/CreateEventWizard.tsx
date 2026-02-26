@@ -343,7 +343,7 @@ export default function CreateEventWizard({
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold">{isEditing ? 'Edit Event' : 'Create New Event'}</h1>
+          <h1 className="text-2xl font-bold text-[#F98C1F]">{isEditing ? 'Edit Event' : 'Create New Event'}</h1>
           <p className="text-sm text-gray-500 mt-1">
             {savedEventId ? (isEditing ? 'Editing' : 'Draft saved') : 'Unsaved draft'} · Step {step + 1} of {STEPS.length}
           </p>
@@ -376,10 +376,10 @@ export default function CreateEventWizard({
               if (s.id < step || validateStep(step)) setStep(s.id);
             }}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-colors ${s.id === step
-                ? 'bg-black text-white'
-                : s.id < step
-                  ? 'bg-green-50 text-green-700'
-                  : 'text-gray-400 hover:text-gray-600'
+              ? 'bg-black text-white'
+              : s.id < step
+                ? 'bg-green-50 text-green-700'
+                : 'text-gray-400 hover:text-gray-600'
               }`}
           >
             <s.icon size={14} />
@@ -514,6 +514,7 @@ function StepBasics({
             onChange={(e) => updateField('title', e.target.value)}
             placeholder="e.g. Summer Music Festival 2026"
             error={errors.title}
+            className="text-black"
           />
         </div>
 
@@ -646,8 +647,8 @@ function StepDateVenue({
               type="button"
               onClick={() => updateField('location_type', opt.value as EventFormData['location_type'])}
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border text-sm font-medium transition-colors ${form.location_type === opt.value
-                  ? 'border-black bg-black text-white'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                ? 'border-black bg-black text-white'
+                : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
             >
               <opt.icon size={16} />
