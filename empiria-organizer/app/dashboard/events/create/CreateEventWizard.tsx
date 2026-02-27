@@ -553,12 +553,12 @@ function LivePreview({
         {/* Animated orange glow - outer layer */}
         <div
           className="absolute -inset-4 animate-float-glow rounded-3xl blur-2xl"
-          style={{ background: 'rgba(225, 140, 50, 0.25)' }}
+          style={{ background: 'rgba(249, 140, 31, 0.45)' }}
         />
         {/* Animated orange glow - inner layer */}
         <div
           className="absolute -inset-2 animate-float-glow-inner rounded-2xl blur-lg"
-          style={{ background: 'rgba(225, 140, 50, 0.15)' }}
+          style={{ background: 'rgba(249, 140, 31, 0.3)' }}
         />
 
         {/* Event Card */}
@@ -576,8 +576,8 @@ function LivePreview({
                 crossOrigin="anonymous"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#F98C1F] to-[#e07b10]">
-                <ImageIcon className="size-12 text-white/80" />
+              <div className="flex h-full w-full items-center justify-center bg-white">
+                <ImageIcon className="size-12 text-[#F98C1F]/60" />
               </div>
             )}
 
