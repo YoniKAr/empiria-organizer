@@ -462,7 +462,7 @@ export default function CreateEventWizard({
         </div>
 
         {/* Navigation - sticky bottom */}
-        <div className="sticky bottom-0 border-t border-border bg-card/95 px-6 py-4 backdrop-blur-sm lg:px-8">
+        <div className="sticky bottom-0 bg-gradient-to-t from-background via-background/90 to-transparent px-6 pb-6 pt-8 lg:px-8">
           <div className="flex items-center justify-between">
             <Button
               variant="ghost"

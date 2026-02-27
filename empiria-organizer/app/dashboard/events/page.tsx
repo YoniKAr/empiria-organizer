@@ -141,7 +141,7 @@ function EventCard({ event }: { event: EventWithTiers }) {
 
   return (
     <Link href={cardHref} className="block">
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-[#F98C1F] transition-colors">
         <div className="flex">
           {/* Cover Image or Placeholder */}
           <div className="w-40 h-32 flex-shrink-0 bg-gray-100 relative hidden sm:block">
