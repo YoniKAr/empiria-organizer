@@ -77,8 +77,8 @@
 }
 
 @theme inline {
-  --font-sans: 'DM Sans', 'DM Sans Fallback';
-  --font-mono: 'JetBrains Mono', 'JetBrains Mono Fallback';
+  --font-sans: var(--font-geist-sans), sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
