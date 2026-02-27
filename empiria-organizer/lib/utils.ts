@@ -1,3 +1,6 @@
+import { type ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
 const CURRENCY_CONFIG: Record<string, { locale: string }> = {
   usd: { locale: 'en-US' },
   cad: { locale: 'en-CA' },
@@ -40,4 +43,8 @@ export function getCurrencySymbol(currency: string = 'cad'): string {
     currency: code.toUpperCase(),
   }).formatToParts(0);
   return parts.find((p) => p.type === 'currency')?.value || '$';
+}
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 }

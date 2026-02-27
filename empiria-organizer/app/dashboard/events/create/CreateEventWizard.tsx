@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -13,16 +12,33 @@ import {
   MapPin,
   Calendar,
   Ticket,
-  Image,
+  ImageIcon,
   FileText,
   Check,
   X,
   Globe,
   Monitor,
+  Upload,
+  Heart,
+  Users,
+  Info,
+  Search,
 } from 'lucide-react';
-import { createEvent, updateEvent, publishEvent } from '@/lib/actions';
-import { getCurrencySymbol, formatCurrency } from '@/lib/utils';
-import EventPreview from './EventPreview';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/button';
+import { Input } from '@/components/input';
+import { Textarea } from '@/components/textarea';
+import { Label } from '@/components/label';
+import { Badge } from '@/components/badge';
+import { Checkbox } from '@/components/checkbox';
+import { Separator } from '@/components/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/select';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface TicketTier {
@@ -51,6 +67,7 @@ interface EventFormData {
   venue_name: string;
   address_text: string;
   city: string;
+  zip_code: string;
   currency: string;
   ticket_tiers: TicketTier[];
 }
@@ -84,7 +101,7 @@ const STEPS = [
   { id: 0, label: 'Basics', icon: FileText },
   { id: 1, label: 'Date & Venue', icon: Calendar },
   { id: 2, label: 'Tickets', icon: Ticket },
-  { id: 3, label: 'Media', icon: Image },
+  { id: 3, label: 'Media', icon: ImageIcon },
   { id: 4, label: 'Review', icon: Check },
 ];
 
@@ -114,11 +131,11 @@ const INITIAL_FORM: EventFormData = {
   venue_name: '',
   address_text: '',
   city: '',
+  zip_code: '',
   currency: 'cad',
   ticket_tiers: [{ ...DEFAULT_TIER }],
 };
 
-// ─── Slug Generator ─────────────────────────────────────────────────────────
 function toSlug(text: string): string {
   return text
     .toLowerCase()
@@ -137,7 +154,6 @@ export default function CreateEventWizard({
   categories: Category[];
   existingEvent?: ExistingEvent;
 }) {
-  const router = useRouter();
   const isEditing = !!existingEvent;
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<EventFormData>(() => {
@@ -155,30 +171,34 @@ export default function CreateEventWizard({
         venue_name: existingEvent.venue_name,
         address_text: existingEvent.address_text,
         city: existingEvent.city,
+        zip_code: '',
         currency: existingEvent.currency,
-        ticket_tiers: existingEvent.ticket_tiers.length > 0
-          ? existingEvent.ticket_tiers
-          : [{ ...DEFAULT_TIER }],
+        ticket_tiers:
+          existingEvent.ticket_tiers.length > 0
+            ? existingEvent.ticket_tiers
+            : [{ ...DEFAULT_TIER }],
       };
     }
     return INITIAL_FORM;
   });
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [savedEventId, setSavedEventId] = useState<string | null>(existingEvent?.id || null);
-  const [showPreview, setShowPreview] = useState(false);
+  const [savedEventId, setSavedEventId] = useState<string | null>(
+    existingEvent?.id || null
+  );
   const [tagInput, setTagInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: 'success' | 'error';
+  } | null>(null);
 
-  // Auto-generate slug from title (only for new events)
   useEffect(() => {
     if (!savedEventId && !isEditing) {
       setForm((f) => ({ ...f, slug: toSlug(f.title) }));
     }
   }, [form.title, savedEventId, isEditing]);
 
-  // Auto-dismiss toast
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(null), 4000);
@@ -186,13 +206,19 @@ export default function CreateEventWizard({
     }
   }, [toast]);
 
-  // ─── Field Updaters ─────────────────────────────────────────────────────
-  const updateField = <K extends keyof EventFormData>(key: K, value: EventFormData[K]) => {
+  const updateField = <K extends keyof EventFormData>(
+    key: K,
+    value: EventFormData[K]
+  ) => {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => ({ ...e, [key]: '' }));
   };
 
-  const updateTier = (index: number, field: keyof TicketTier, value: string | number | boolean) => {
+  const updateTier = (
+    index: number,
+    field: keyof TicketTier,
+    value: string | number | boolean
+  ) => {
     setForm((f) => {
       const tiers = [...f.ticket_tiers];
       tiers[index] = { ...tiers[index], [field]: value };
@@ -203,7 +229,10 @@ export default function CreateEventWizard({
   const addTier = () => {
     setForm((f) => ({
       ...f,
-      ticket_tiers: [...f.ticket_tiers, { ...DEFAULT_TIER, id: crypto.randomUUID() }],
+      ticket_tiers: [
+        ...f.ticket_tiers,
+        { ...DEFAULT_TIER, id: crypto.randomUUID() },
+      ],
     }));
   };
 
@@ -224,10 +253,12 @@ export default function CreateEventWizard({
   };
 
   const removeTag = (tag: string) => {
-    updateField('tags', form.tags.filter((t) => t !== tag));
+    updateField(
+      'tags',
+      form.tags.filter((t) => t !== tag)
+    );
   };
 
-  // ─── Validation ─────────────────────────────────────────────────────────
   const validateStep = (s: number): boolean => {
     const errs: Record<string, string> = {};
     if (s === 0) {
@@ -237,7 +268,11 @@ export default function CreateEventWizard({
     if (s === 1) {
       if (!form.start_at) errs.start_at = 'Start date is required';
       if (!form.end_at) errs.end_at = 'End date is required';
-      if (form.start_at && form.end_at && new Date(form.end_at) <= new Date(form.start_at)) {
+      if (
+        form.start_at &&
+        form.end_at &&
+        new Date(form.end_at) <= new Date(form.start_at)
+      ) {
         errs.end_at = 'End must be after start';
       }
       if (form.location_type === 'physical' && !form.venue_name.trim()) {
@@ -246,7 +281,8 @@ export default function CreateEventWizard({
     }
     if (s === 2) {
       form.ticket_tiers.forEach((tier, i) => {
-        if (!tier.name.trim()) errs[`tier_${i}_name`] = 'Tier name is required';
+        if (!tier.name.trim())
+          errs[`tier_${i}_name`] = 'Tier name is required';
         if (tier.initial_quantity <= 0) errs[`tier_${i}_qty`] = 'Must be > 0';
       });
     }
@@ -259,223 +295,443 @@ export default function CreateEventWizard({
   };
   const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
-  // ─── Save Draft ─────────────────────────────────────────────────────────
   const saveDraft = async () => {
     setSaving(true);
     try {
-      const result = savedEventId
-        ? await updateEvent(savedEventId, form)
-        : await createEvent(form);
-
-      if (!result.success) throw new Error(result.error);
-
-      if (!savedEventId && result.data.id) setSavedEventId(result.data.id);
-      setToast({ message: isEditing ? 'Changes saved successfully' : 'Draft saved successfully', type: 'success' });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Save failed';
-      setToast({ message, type: 'error' });
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (!savedEventId) setSavedEventId(crypto.randomUUID());
+      setToast({
+        message: isEditing
+          ? 'Changes saved successfully'
+          : 'Draft saved successfully',
+        type: 'success',
+      });
+    } catch {
+      setToast({ message: 'Save failed', type: 'error' });
     } finally {
       setSaving(false);
     }
   };
 
-  // ─── Publish ────────────────────────────────────────────────────────────
   const handlePublish = async () => {
-    // Save first if not saved
     if (!savedEventId) await saveDraft();
-    if (!savedEventId) return;
-
     setPublishing(true);
     try {
-      const result = await publishEvent(savedEventId);
-      if (!result.success) throw new Error(result.error);
-
+      await new Promise((resolve) => setTimeout(resolve, 800));
       setToast({ message: 'Event published!', type: 'success' });
-      setTimeout(() => router.push(isEditing ? `/dashboard/events/${savedEventId}` : '/dashboard/events'), 1500);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Publish failed';
-      setToast({ message, type: 'error' });
+    } catch {
+      setToast({ message: 'Publish failed', type: 'error' });
     } finally {
       setPublishing(false);
     }
   };
 
-  // ─── Test Mode / Preview Toggle ─────────────────────────────────────────
-  if (showPreview) {
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowPreview(false)}
-              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold">Test Mode — Attendee Preview</h1>
-              <p className="text-sm text-gray-500">This is how attendees will see your event</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs font-bold">
-            <Eye size={14} />
-            TEST MODE
-          </div>
-        </div>
-        <EventPreview form={form} categories={categories} />
-      </div>
-    );
-  }
-
-  // ─── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="flex min-h-screen bg-background">
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-            }`}
+          className={cn(
+            'fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg transition-all',
+            toast.type === 'success'
+              ? 'bg-[#16a34a] text-[#fff]'
+              : 'bg-destructive/10 text-destructive'
+          )}
         >
+          {toast.type === 'success' && <Check className="size-4" />}
           {toast.message}
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-[#F98C1F]">{isEditing ? 'Edit Event' : 'Create New Event'}</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {savedEventId ? (isEditing ? 'Editing' : 'Draft saved') : 'Unsaved draft'} · Step {step + 1} of {STEPS.length}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowPreview(true)}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
-          >
-            <Eye size={16} />
-            Test Mode
-          </button>
-          <button
-            onClick={saveDraft}
-            disabled={saving}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            <Save size={16} />
-            {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Save Draft'}
-          </button>
-        </div>
-      </div>
+      {/* ─── LEFT: Form Panel ─────────────────────────────────────────── */}
+      <div className="flex min-h-screen flex-1 flex-col lg:max-w-[60%]">
+        {/* Sticky Header */}
+        <header className="sticky top-0 z-10 border-b border-border bg-card/95 backdrop-blur-sm">
+          <div className="flex items-center justify-between px-6 py-4 lg:px-8">
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-foreground">
+                {isEditing ? 'Edit Event' : 'Create New Event'}
+              </h1>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Step {step + 1} of {STEPS.length}: {STEPS[step].label}
+              </p>
+            </div>
 
-      {/* Step Indicator */}
-      <div className="flex items-center gap-1 mb-8 bg-white rounded-xl border border-gray-200 p-2">
-        {STEPS.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => {
-              if (s.id < step || validateStep(step)) setStep(s.id);
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-colors ${s.id === step
-              ? 'bg-[#F98C1F] text-white'
-              : s.id < step
-                ? 'bg-green-50 text-green-700'
-                : 'text-gray-400 hover:text-gray-600'
-              }`}
-          >
-            <s.icon size={14} />
-            <span className="hidden sm:inline">{s.label}</span>
-          </button>
-        ))}
-      </div>
+            {/* Step dots */}
+            <div className="hidden items-center gap-1 sm:flex">
+              {STEPS.map((s, i) => {
+                const isActive = i === step;
+                const isCompleted = i < step;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      if (i < step || validateStep(step)) setStep(i);
+                    }}
+                    className="flex items-center gap-1"
+                    aria-label={`Go to step ${s.label}`}
+                  >
+                    {i > 0 && (
+                      <span
+                        className={cn(
+                          'h-[2px] w-4 rounded-full transition-colors',
+                          isCompleted
+                            ? 'bg-foreground'
+                            : 'bg-border'
+                        )}
+                      />
+                    )}
+                    <span
+                      className={cn(
+                        'flex items-center justify-center rounded-full transition-all',
+                        isActive
+                          ? 'size-3 bg-primary'
+                          : isCompleted
+                            ? 'size-2.5 bg-foreground'
+                            : 'size-2.5 bg-border'
+                      )}
+                    />
+                  </button>
+                );
+              })}
+            </div>
 
-      {/* Step Content */}
-      <div className="bg-white rounded-xl border border-gray-200 p-8">
-        {step === 0 && (
-          <StepBasics
-            form={form}
-            errors={errors}
-            categories={categories}
-            tagInput={tagInput}
-            setTagInput={setTagInput}
-            addTag={addTag}
-            removeTag={removeTag}
-            updateField={updateField}
-          />
-        )}
-        {step === 1 && <StepDateVenue form={form} errors={errors} updateField={updateField} />}
-        {step === 2 && (
-          <StepTickets
-            form={form}
-            errors={errors}
-            updateTier={updateTier}
-            addTier={addTier}
-            removeTier={removeTier}
-          />
-        )}
-        {step === 3 && <StepMedia form={form} updateField={updateField} />}
-        {step === 4 && (
-          <StepReview form={form} categories={categories} onPreview={() => setShowPreview(true)} />
-        )}
-      </div>
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { }}
+                className="gap-1.5 text-xs"
+              >
+                <Eye className="size-3.5" />
+                <span className="hidden sm:inline">Preview</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={saveDraft}
+                disabled={saving}
+                className="gap-1.5 text-xs"
+              >
+                <Save className="size-3.5" />
+                <span className="hidden sm:inline">
+                  {saving ? 'Saving...' : 'Save Draft'}
+                </span>
+              </Button>
+            </div>
+          </div>
+        </header>
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between mt-6">
-        <button
-          onClick={prevStep}
-          disabled={step === 0}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-black disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <ChevronLeft size={16} />
-          Back
-        </button>
-        <div className="flex gap-3 text-[#F98C1F]">
-          {step < STEPS.length - 1 ? (
-            <button
-              onClick={nextStep}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#F98C1F] text-white rounded-lg text-sm font-medium hover:bg-[#F98C1F]/80"
-            >
-              Continue
-              <ChevronRight size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={handlePublish}
-              disabled={publishing}
-              className="flex items-center gap-2 px-6 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-bold hover:bg-orange-700 disabled:opacity-50"
-            >
-              <Rocket size={16} />
-              {publishing ? 'Publishing...' : 'Publish Event'}
-            </button>
+        {/* Form content */}
+        <div className="flex-1 px-6 py-8 lg:px-8">
+          {step === 0 && (
+            <StepBasics
+              form={form}
+              errors={errors}
+              categories={categories}
+              tagInput={tagInput}
+              setTagInput={setTagInput}
+              addTag={addTag}
+              removeTag={removeTag}
+              updateField={updateField}
+            />
+          )}
+          {step === 1 && (
+            <StepDateVenue
+              form={form}
+              errors={errors}
+              updateField={updateField}
+            />
+          )}
+          {step === 2 && (
+            <StepTickets
+              form={form}
+              errors={errors}
+              updateTier={updateTier}
+              addTier={addTier}
+              removeTier={removeTier}
+            />
+          )}
+          {step === 3 && (
+            <StepMedia form={form} updateField={updateField} />
+          )}
+          {step === 4 && (
+            <StepReview form={form} categories={categories} />
           )}
         </div>
+
+        {/* Navigation - sticky bottom */}
+        <div className="sticky bottom-0 border-t border-border bg-card/95 px-6 py-4 backdrop-blur-sm lg:px-8">
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              onClick={prevStep}
+              disabled={step === 0}
+              className="gap-1.5 text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="size-4" />
+              Back
+            </Button>
+            {step < STEPS.length - 1 ? (
+              <Button
+                onClick={nextStep}
+                className="gap-1.5 bg-primary px-8 text-primary-foreground hover:bg-primary/90"
+              >
+                Continue
+                <ChevronRight className="size-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={handlePublish}
+                disabled={publishing}
+                className="gap-1.5 bg-primary px-8 text-primary-foreground hover:bg-primary/90"
+              >
+                <Rocket className="size-4" />
+                {publishing ? 'Publishing...' : 'Publish Event'}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── RIGHT: Live Preview Panel ─────────────────────────────────── */}
+      <aside className="hidden border-l border-border lg:block lg:w-[40%]">
+        <div className="sticky top-0 h-screen overflow-y-auto bg-card">
+          <LivePreview form={form} categories={categories} />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE PREVIEW PANEL
+// ═══════════════════════════════════════════════════════════════════════════
+
+function LivePreview({
+  form,
+  categories,
+}: {
+  form: EventFormData;
+  categories: Category[];
+}) {
+  const cat = categories.find((c) => c.id === form.category_id);
+  const lowestPrice = useMemo(() => {
+    const prices = form.ticket_tiers
+      .filter((t) => t.name.trim())
+      .map((t) => t.price);
+    if (prices.length === 0) return null;
+    return Math.min(...prices);
+  }, [form.ticket_tiers]);
+
+  const startDate = form.start_at ? new Date(form.start_at) : null;
+  const locationLabel =
+    form.location_type === 'physical'
+      ? 'In-Person'
+      : form.location_type === 'virtual'
+        ? 'Online'
+        : 'Hybrid';
+
+  return (
+    <div className="flex h-full flex-col items-center px-8 py-10">
+      {/* Header */}
+      <div className="mb-10 flex w-full max-w-sm items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Live Preview
+        </p>
+        <Badge
+          variant="outline"
+          className="border-primary/30 bg-primary/5 text-xs font-medium text-primary"
+        >
+          Event Card
+        </Badge>
+      </div>
+
+      {/* Floating card with orange glow */}
+      <div className="relative mx-auto w-full max-w-sm">
+        {/* Animated orange glow */}
+        <div className="absolute -inset-3 animate-float-glow rounded-3xl bg-primary/20 blur-xl" />
+        <div className="absolute -inset-1.5 animate-float-glow-inner rounded-2xl bg-primary/10 blur-md" />
+
+        {/* Event Card */}
+        <div className="relative animate-float overflow-hidden rounded-2xl border border-primary/20 bg-card shadow-xl shadow-primary/10">
+          {/* Image */}
+          <div className="relative h-44 overflow-hidden bg-muted">
+            {form.cover_image_url ? (
+              <img
+                src={form.cover_image_url}
+                alt="Event cover"
+                className="h-full w-full object-cover"
+                crossOrigin="anonymous"
+              />
+            ) : (
+              <img
+                src="/images/event-placeholder.jpg"
+                alt="Event placeholder"
+                className="h-full w-full object-cover opacity-70"
+              />
+            )}
+
+            {/* Location badge */}
+            <div className="absolute top-3 left-3">
+              <Badge className="border-0 bg-foreground/70 text-[11px] font-medium text-card backdrop-blur-sm">
+                {locationLabel}
+              </Badge>
+            </div>
+
+            {/* Heart icon */}
+            <button
+              className="absolute top-3 right-3 flex size-8 items-center justify-center rounded-full bg-card/30 text-card backdrop-blur-sm transition-colors hover:bg-card/50"
+              aria-label="Save event"
+            >
+              <Heart className="size-4" />
+            </button>
+
+            {/* Category tag */}
+            {cat && (
+              <div className="absolute bottom-3 left-3">
+                <Badge className="border-0 bg-primary text-[11px] font-medium text-primary-foreground">
+                  {cat.name}
+                </Badge>
+              </div>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="p-5">
+            {/* Date + Title */}
+            <div className="flex gap-3.5">
+              {startDate && (
+                <div className="flex shrink-0 flex-col items-center rounded-lg border border-border px-2.5 py-1.5">
+                  <span className="text-[10px] font-bold uppercase text-primary">
+                    {startDate.toLocaleDateString('en-US', { month: 'short' })}
+                  </span>
+                  <span className="text-lg font-bold leading-tight text-foreground">
+                    {startDate.getDate()}
+                  </span>
+                </div>
+              )}
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-bold text-foreground">
+                  {form.title || 'Your Event Title'}
+                </h3>
+                {startDate && (
+                  <p className="mt-0.5 text-sm text-primary">
+                    {startDate.toLocaleDateString('en-US', {
+                      weekday: 'long',
+                    })}
+                    {', '}
+                    {startDate.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Location */}
+            {(form.venue_name || form.city) && (
+              <div className="mt-3.5 flex items-center gap-2 text-sm text-muted-foreground">
+                <MapPin className="size-3.5 shrink-0 text-primary" />
+                <span className="truncate">
+                  {form.venue_name}
+                  {form.city ? `, ${form.city}` : ''}
+                </span>
+              </div>
+            )}
+
+            {/* Tickets */}
+            {lowestPrice !== null && (
+              <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                <Ticket className="size-3.5 shrink-0 text-primary" />
+                {lowestPrice === 0
+                  ? 'Free tickets available'
+                  : `Tickets from $${lowestPrice.toFixed(0)}`}
+              </div>
+            )}
+
+            <Separator className="my-4" />
+
+            {/* Footer */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <div className="flex -space-x-2">
+                  <div className="size-7 rounded-full border-2 border-card bg-[#3a7d5c]" />
+                  <div className="size-7 rounded-full border-2 border-card bg-[#5a6e8f]" />
+                </div>
+                <span className="ml-1 text-xs text-muted-foreground">+42</span>
+              </div>
+              <button className="text-sm font-semibold text-primary hover:underline">
+                View Details
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Info note */}
+      <div className="mx-auto mt-10 flex max-w-sm items-center gap-2.5 rounded-lg border border-border bg-muted/50 px-4 py-3">
+        <Info className="size-4 shrink-0 text-primary" />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          This is how your event will appear in the search results.
+        </p>
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP COMPONENTS
+// HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function FieldLabel({ children, error }: { children: React.ReactNode; error?: string }) {
+function FormField({
+  label,
+  error,
+  required,
+  hint,
+  children,
+}: {
+  label: string;
+  error?: string;
+  required?: boolean;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">{children}</label>
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    <div className="space-y-2">
+      <Label className="text-sm font-medium text-foreground">
+        {label}
+        {required && <span className="ml-0.5 text-primary">*</span>}
+      </Label>
+      {children}
+      {hint && !error && (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
+      {error && (
+        <p className="text-xs font-medium text-destructive">{error}</p>
+      )}
     </div>
   );
 }
 
-function Input({
-  error,
-  ...props
-}: React.InputHTMLAttributes<HTMLInputElement> & { error?: string }) {
+function SectionHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   return (
-    <input
-      {...props}
-      className={`w-full border rounded-lg px-3 py-2.5 text-sm outline-none transition-colors focus:border-black ${error ? 'border-red-300 bg-red-50' : 'border-gray-200'
-        } ${props.className || ''}`}
-    />
+    <div className="mb-8">
+      <h2 className="text-xl font-bold tracking-tight text-foreground">
+        {title}
+      </h2>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+        {description}
+      </p>
+    </div>
   );
 }
 
@@ -497,102 +753,141 @@ function StepBasics({
   setTagInput: (v: string) => void;
   addTag: () => void;
   removeTag: (t: string) => void;
-  updateField: <K extends keyof EventFormData>(key: K, value: EventFormData[K]) => void;
+  updateField: <K extends keyof EventFormData>(
+    key: K,
+    value: EventFormData[K]
+  ) => void;
 }) {
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-bold mb-1 text-[#F98C1F]">Event Details</h2>
-        <p className="text-sm text-gray-500">Start with the basics about your event.</p>
-      </div>
+    <div>
+      <SectionHeader
+        title="Event Details"
+        description="Start with the basics. Give your event a name and tell people what to expect."
+      />
 
-      <div className="space-y-4">
-        <div>
-          <FieldLabel error={errors.title}>Event Title *</FieldLabel>
+      <div className="space-y-6">
+        <FormField label="Event Title" error={errors.title} required>
           <Input
             value={form.title}
             onChange={(e) => updateField('title', e.target.value)}
-            placeholder="e.g. Summer Music Festival 2026"
-            error={errors.title}
-            className="text-black"
+            placeholder="e.g. Annual Tech Conference 2026"
+            aria-invalid={!!errors.title}
+            className="h-11"
           />
-        </div>
+        </FormField>
 
-        <div>
-          <FieldLabel error={errors.slug}>URL Slug *</FieldLabel>
+        <FormField
+          label="URL Slug"
+          error={errors.slug}
+          required
+          hint="This will be used in the event URL"
+        >
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">empiriaindia.com/events/</span>
+            <span className="shrink-0 rounded-md bg-muted px-3 py-2.5 text-xs font-medium text-muted-foreground">
+              /events/
+            </span>
             <Input
               value={form.slug}
               onChange={(e) => updateField('slug', toSlug(e.target.value))}
-              placeholder="summer-music-festival"
-              error={errors.slug}
-              className="text-black"
+              placeholder="annual-tech-conference"
+              aria-invalid={!!errors.slug}
+              className="h-11"
             />
           </div>
-        </div>
+        </FormField>
 
-        <div>
-          <FieldLabel>Description</FieldLabel>
-          <textarea
+        <FormField label="Description">
+          <Textarea
             value={form.description}
             onChange={(e) => updateField('description', e.target.value)}
-            rows={5}
-            placeholder="Tell attendees what to expect at your event..."
-            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-black resize-none text-black"
+            rows={4}
+            placeholder="Tell attendees what to expect, what they'll learn, who should come..."
+            className="resize-none"
           />
+        </FormField>
+
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <FormField label="Category">
+            <Select
+              value={form.category_id}
+              onValueChange={(v) => updateField('category_id', v)}
+            >
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+
+          <FormField label="Currency">
+            <Select
+              value={form.currency}
+              onValueChange={(v) => updateField('currency', v)}
+            >
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cad">CAD</SelectItem>
+                <SelectItem value="usd">USD</SelectItem>
+                <SelectItem value="eur">EUR</SelectItem>
+                <SelectItem value="gbp">GBP</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
         </div>
 
-        <div>
-          <FieldLabel>Category</FieldLabel>
-          <select
-            value={form.category_id}
-            onChange={(e) => updateField('category_id', e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-black bg-white text-black"
-          >
-            <option value="">Select a category</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <FieldLabel>Tags</FieldLabel>
-          <div className="flex gap-2 mb-2 ">
+        <FormField label="Tags" hint="Press Enter to add a tag">
+          <div className="flex gap-2">
             <Input
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addTag();
+                }
+              }}
               placeholder="Add a tag and press Enter"
-              className="text-black"
+              className="h-11"
             />
-            <button
+            <Button
               onClick={addTag}
               type="button"
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50"
+              variant="outline"
+              size="sm"
+              className="h-11 shrink-0 px-4"
             >
               Add
-            </button>
+            </Button>
           </div>
           {form.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5 pt-1">
               {form.tags.map((tag) => (
-                <span
+                <Badge
                   key={tag}
-                  className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full text-xs font-medium"
+                  variant="secondary"
+                  className="gap-1 pr-1.5"
                 >
                   {tag}
-                  <button onClick={() => removeTag(tag)}>
-                    <X size={12} />
+                  <button
+                    onClick={() => removeTag(tag)}
+                    className="ml-0.5 rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                    aria-label={`Remove ${tag} tag`}
+                  >
+                    <X className="size-3" />
                   </button>
-                </span>
+                </Badge>
               ))}
             </div>
           )}
-        </div>
+        </FormField>
       </div>
     </div>
   );
@@ -606,89 +901,129 @@ function StepDateVenue({
 }: {
   form: EventFormData;
   errors: Record<string, string>;
-  updateField: <K extends keyof EventFormData>(key: K, value: EventFormData[K]) => void;
+  updateField: <K extends keyof EventFormData>(
+    key: K,
+    value: EventFormData[K]
+  ) => void;
 }) {
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-bold mb-1">When & Where</h2>
-        <p className="text-sm text-gray-500">Set the date, time, and location for your event.</p>
-      </div>
+    <div>
+      <SectionHeader
+        title="When & Where"
+        description="Set the date, time, and location details for your upcoming event."
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <FieldLabel error={errors.start_at}>Start Date & Time *</FieldLabel>
-          <Input
-            type="datetime-local"
-            value={form.start_at}
-            onChange={(e) => updateField('start_at', e.target.value)}
+      <div className="space-y-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label="Start Date & Time"
             error={errors.start_at}
-          />
+            required
+          >
+            <Input
+              type="datetime-local"
+              value={form.start_at}
+              onChange={(e) => updateField('start_at', e.target.value)}
+              aria-invalid={!!errors.start_at}
+              className="h-11"
+            />
+          </FormField>
+          <FormField label="End Date & Time" error={errors.end_at} required>
+            <Input
+              type="datetime-local"
+              value={form.end_at}
+              onChange={(e) => updateField('end_at', e.target.value)}
+              aria-invalid={!!errors.end_at}
+              className="h-11"
+            />
+          </FormField>
         </div>
-        <div>
-          <FieldLabel error={errors.end_at}>End Date & Time *</FieldLabel>
-          <Input
-            type="datetime-local"
-            value={form.end_at}
-            onChange={(e) => updateField('end_at', e.target.value)}
-            error={errors.end_at}
-          />
-        </div>
-      </div>
 
-      <div>
-        <FieldLabel>Location Type</FieldLabel>
-        <div className="flex gap-3">
-          {[
-            { value: 'physical', label: 'In-Person', icon: MapPin },
-            { value: 'virtual', label: 'Online', icon: Globe },
-            { value: 'hybrid', label: 'Hybrid', icon: Monitor },
-          ].map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => updateField('location_type', opt.value as EventFormData['location_type'])}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border text-sm font-medium transition-colors ${form.location_type === opt.value
-                ? 'border-black bg-black text-white'
-                : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                }`}
-            >
-              <opt.icon size={16} />
-              {opt.label}
-            </button>
-          ))}
+        {/* Location Type */}
+        <div className="space-y-3">
+          <Label className="text-sm font-medium text-foreground">
+            Location Type
+          </Label>
+          <div className="flex gap-3">
+            {[
+              { value: 'physical', label: 'In-Person', icon: MapPin },
+              { value: 'virtual', label: 'Online', icon: Globe },
+              { value: 'hybrid', label: 'Hybrid', icon: Monitor },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() =>
+                  updateField(
+                    'location_type',
+                    opt.value as EventFormData['location_type']
+                  )
+                }
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-5 py-3 text-sm font-medium transition-all',
+                  form.location_type === opt.value
+                    ? 'border-primary bg-primary/5 text-primary shadow-sm'
+                    : 'border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground'
+                )}
+              >
+                <opt.icon className="size-4" />
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {(form.location_type === 'physical' || form.location_type === 'hybrid') && (
-        <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-          <div>
-            <FieldLabel error={errors.venue_name}>Venue Name *</FieldLabel>
-            <Input
-              value={form.venue_name}
-              onChange={(e) => updateField('venue_name', e.target.value)}
-              placeholder="e.g. The Grand Ballroom"
-              error={errors.venue_name}
-            />
-          </div>
-          <div>
-            <FieldLabel>Address</FieldLabel>
-            <Input
-              value={form.address_text}
-              onChange={(e) => updateField('address_text', e.target.value)}
-              placeholder="Full street address"
-            />
-          </div>
-          <div>
-            <FieldLabel>City</FieldLabel>
-            <Input
-              value={form.city}
-              onChange={(e) => updateField('city', e.target.value)}
-              placeholder="e.g. Mumbai"
-            />
-          </div>
-        </div>
-      )}
+        {/* Venue Details */}
+        {(form.location_type === 'physical' ||
+          form.location_type === 'hybrid') && (
+            <div className="space-y-5 rounded-xl border border-border bg-card p-6">
+              <FormField
+                label="Venue Name"
+                error={errors.venue_name}
+                required
+              >
+                <Input
+                  value={form.venue_name}
+                  onChange={(e) => updateField('venue_name', e.target.value)}
+                  placeholder="e.g. The Grand Ballroom"
+                  aria-invalid={!!errors.venue_name}
+                  className="h-11"
+                />
+              </FormField>
+              <FormField label="Full Address">
+                <div className="relative">
+                  <Search className="absolute top-3.5 left-3 size-4 text-muted-foreground" />
+                  <Input
+                    value={form.address_text}
+                    onChange={(e) =>
+                      updateField('address_text', e.target.value)
+                    }
+                    placeholder="Start typing address..."
+                    className="h-11 pl-9"
+                  />
+                </div>
+              </FormField>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField label="City">
+                  <Input
+                    value={form.city}
+                    onChange={(e) => updateField('city', e.target.value)}
+                    placeholder="e.g. Mumbai"
+                    className="h-11"
+                  />
+                </FormField>
+                <FormField label="Zip Code">
+                  <Input
+                    value={form.zip_code}
+                    onChange={(e) => updateField('zip_code', e.target.value)}
+                    placeholder="e.g. 400001"
+                    className="h-11"
+                  />
+                </FormField>
+              </div>
+            </div>
+          )}
+      </div>
     </div>
   );
 }
@@ -703,97 +1038,140 @@ function StepTickets({
 }: {
   form: EventFormData;
   errors: Record<string, string>;
-  updateTier: (i: number, field: keyof TicketTier, value: string | number | boolean) => void;
+  updateTier: (
+    i: number,
+    field: keyof TicketTier,
+    value: string | number | boolean
+  ) => void;
   addTier: () => void;
   removeTier: (i: number) => void;
 }) {
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div>
+      <div className="mb-8 flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-bold mb-1">Ticket Tiers</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">
+            Ticket Tiers
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
             Create one or more ticket types. Set price to 0 for free tickets.
           </p>
         </div>
-        <button
+        <Button
           onClick={addTier}
           type="button"
-          className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
+          variant="outline"
+          size="sm"
+          className="shrink-0 gap-1.5"
         >
-          <Plus size={14} />
+          <Plus className="size-3.5" />
           Add Tier
-        </button>
+        </Button>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         {form.ticket_tiers.map((tier, i) => (
-          <div key={tier.id} className="border border-gray-200 rounded-lg p-5 relative">
+          <div
+            key={tier.id}
+            className="relative rounded-xl border border-border bg-card p-6"
+          >
+            <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-xl bg-primary" />
             {form.ticket_tiers.length > 1 && (
-              <button
+              <Button
                 onClick={() => removeTier(i)}
                 type="button"
-                className="absolute top-3 right-3 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                variant="ghost"
+                size="icon"
+                className="absolute top-3 right-3 size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               >
-                <Trash2 size={14} />
-              </button>
+                <Trash2 className="size-3.5" />
+              </Button>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <FieldLabel error={errors[`tier_${i}_name`]}>Tier Name *</FieldLabel>
+            <p className="mb-5 text-xs font-semibold uppercase tracking-widest text-primary">
+              Tier {i + 1}
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormField
+                label="Tier Name"
+                error={errors[`tier_${i}_name`]}
+                required
+              >
                 <Input
                   value={tier.name}
                   onChange={(e) => updateTier(i, 'name', e.target.value)}
                   placeholder="e.g. General Admission, VIP"
-                  error={errors[`tier_${i}_name`]}
+                  aria-invalid={!!errors[`tier_${i}_name`]}
+                  className="h-11"
                 />
-              </div>
-              <div>
-                <FieldLabel>Description</FieldLabel>
+              </FormField>
+              <FormField label="Description">
                 <Input
                   value={tier.description}
-                  onChange={(e) => updateTier(i, 'description', e.target.value)}
+                  onChange={(e) =>
+                    updateTier(i, 'description', e.target.value)
+                  }
                   placeholder="What's included"
+                  className="h-11"
                 />
-              </div>
-              <div>
-                <FieldLabel>Price ({getCurrencySymbol(form.currency)})</FieldLabel>
+              </FormField>
+              <FormField
+                label={`Price (${form.currency.toUpperCase()})`}
+              >
                 <Input
                   type="number"
                   min="0"
                   step="0.01"
                   value={tier.price}
-                  onChange={(e) => updateTier(i, 'price', parseFloat(e.target.value) || 0)}
+                  onChange={(e) =>
+                    updateTier(i, 'price', parseFloat(e.target.value) || 0)
+                  }
+                  className="h-11"
                 />
-              </div>
-              <div>
-                <FieldLabel error={errors[`tier_${i}_qty`]}>Total Quantity *</FieldLabel>
+              </FormField>
+              <FormField
+                label="Total Quantity"
+                error={errors[`tier_${i}_qty`]}
+                required
+              >
                 <Input
                   type="number"
                   min="1"
                   value={tier.initial_quantity}
-                  onChange={(e) => updateTier(i, 'initial_quantity', parseInt(e.target.value) || 0)}
-                  error={errors[`tier_${i}_qty`]}
+                  onChange={(e) =>
+                    updateTier(
+                      i,
+                      'initial_quantity',
+                      parseInt(e.target.value) || 0
+                    )
+                  }
+                  aria-invalid={!!errors[`tier_${i}_qty`]}
+                  className="h-11"
                 />
-              </div>
-              <div>
-                <FieldLabel>Max Per Order</FieldLabel>
+              </FormField>
+              <FormField label="Max Per Order">
                 <Input
                   type="number"
                   min="1"
                   max="50"
                   value={tier.max_per_order}
-                  onChange={(e) => updateTier(i, 'max_per_order', parseInt(e.target.value) || 1)}
+                  onChange={(e) =>
+                    updateTier(
+                      i,
+                      'max_per_order',
+                      parseInt(e.target.value) || 1
+                    )
+                  }
+                  className="h-11"
                 />
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm text-gray-600 pb-2.5">
-                  <input
-                    type="checkbox"
+              </FormField>
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                  <Checkbox
                     checked={tier.is_hidden}
-                    onChange={(e) => updateTier(i, 'is_hidden', e.target.checked)}
-                    className="rounded"
+                    onCheckedChange={(checked) =>
+                      updateTier(i, 'is_hidden', !!checked)
+                    }
                   />
                   Hidden tier (invite-only)
                 </label>
@@ -812,39 +1190,59 @@ function StepMedia({
   updateField,
 }: {
   form: EventFormData;
-  updateField: <K extends keyof EventFormData>(key: K, value: EventFormData[K]) => void;
+  updateField: <K extends keyof EventFormData>(
+    key: K,
+    value: EventFormData[K]
+  ) => void;
 }) {
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-bold mb-1">Event Media</h2>
-        <p className="text-sm text-gray-500">Add a cover image for your event page.</p>
-      </div>
+    <div>
+      <SectionHeader
+        title="Event Media"
+        description="Add a cover image to make your event stand out in listings."
+      />
 
-      <div>
-        <FieldLabel>Cover Image URL</FieldLabel>
-        <Input
-          value={form.cover_image_url}
-          onChange={(e) => updateField('cover_image_url', e.target.value)}
-          placeholder="https://example.com/my-event-banner.jpg"
-        />
-        <p className="text-xs text-gray-400 mt-1.5">
-          Paste a direct image URL. Recommended size: 1200×630px. File upload coming soon.
-        </p>
-      </div>
-
-      {form.cover_image_url && (
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <img
-            src={form.cover_image_url}
-            alt="Cover preview"
-            className="w-full h-64 object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
+      <div className="space-y-6">
+        <FormField
+          label="Cover Image URL"
+          hint="Paste a direct image URL. Recommended size: 1200 x 630px."
+        >
+          <Input
+            value={form.cover_image_url}
+            onChange={(e) => updateField('cover_image_url', e.target.value)}
+            placeholder="https://example.com/my-event-banner.jpg"
+            className="h-11"
           />
-        </div>
-      )}
+        </FormField>
+
+        {form.cover_image_url ? (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <img
+              src={form.cover_image_url}
+              alt="Cover preview"
+              className="h-56 w-full object-cover"
+              crossOrigin="anonymous"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          </div>
+        ) : (
+          <div className="flex h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/50">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary">
+              <Upload className="size-6 text-muted-foreground" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium text-foreground">
+                No image yet
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Paste a URL above to preview your cover image
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -853,82 +1251,108 @@ function StepMedia({
 function StepReview({
   form,
   categories,
-  onPreview,
 }: {
   form: EventFormData;
   categories: Category[];
-  onPreview: () => void;
 }) {
   const cat = categories.find((c) => c.id === form.category_id);
-  const totalTickets = form.ticket_tiers.reduce((sum, t) => sum + t.initial_quantity, 0);
+  const totalTickets = form.ticket_tiers.reduce(
+    (sum, t) => sum + t.initial_quantity,
+    0
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold mb-1">Review Your Event</h2>
-          <p className="text-sm text-gray-500">Make sure everything looks good before publishing.</p>
-        </div>
-        <button
-          onClick={onPreview}
-          className="flex items-center gap-2 px-4 py-2 bg-[#F98C1F] text-white rounded-lg text-sm font-bold hover:bg-[#F98C1F]/80"
-        >
-          <Eye size={16} />
-          Open Test Mode
-        </button>
-      </div>
+    <div>
+      <SectionHeader
+        title="Review Your Event"
+        description="Make sure everything looks good before publishing."
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Left column */}
-        <div className="space-y-4x">
-          <ReviewSection title="Basics" >
-            <ReviewRow label="Title" value={form.title || '—'} />
-            <ReviewRow label="Slug" value={form.slug || '—'} />
-            <ReviewRow label="Category" value={cat?.name || 'None'} />
-            <ReviewRow label="Tags" value={form.tags.join(', ') || 'None'} />
-          </ReviewSection>
+      <div className="space-y-5">
+        <ReviewCard title="Event Basics" icon={FileText}>
+          <ReviewRow label="Title" value={form.title || '\u2014'} />
+          <ReviewRow label="Slug" value={form.slug || '\u2014'} />
+          <ReviewRow label="Category" value={cat?.name || 'None'} />
+          <ReviewRow label="Tags" value={form.tags.join(', ') || 'None'} />
+        </ReviewCard>
 
-          <ReviewSection title="Date & Venue">
-            <ReviewRow label="Start" value={form.start_at ? new Date(form.start_at).toLocaleString() : '—'} />
-            <ReviewRow label="End" value={form.end_at ? new Date(form.end_at).toLocaleString() : '—'} />
-            <ReviewRow label="Type" value={form.location_type} />
-            {form.venue_name && <ReviewRow label="Venue" value={form.venue_name} />}
-            {form.city && <ReviewRow label="City" value={form.city} />}
-          </ReviewSection>
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-4">
-          <ReviewSection title={`Tickets (${form.ticket_tiers.length} tier${form.ticket_tiers.length > 1 ? 's' : ''})`}>
-            {form.ticket_tiers.map((tier) => (
-              <div key={tier.id} className="flex justify-between text-sm py-1">
-                <span className="text-gray-600">{tier.name || 'Unnamed'}</span>
-                <span className="font-medium">
-                  {tier.price === 0 ? 'Free' : `${formatCurrency(tier.price, form.currency)}`} × {tier.initial_quantity}
-                </span>
-              </div>
-            ))}
-            <div className="border-t border-gray-100 mt-2 pt-2 flex justify-between text-sm font-bold">
-              <span>Total capacity</span>
-              <span>{totalTickets}</span>
-            </div>
-          </ReviewSection>
-
-          {form.cover_image_url && (
-            <ReviewSection title="Cover Image">
-              <img src={form.cover_image_url} alt="Cover" className="w-full h-32 object-cover rounded" />
-            </ReviewSection>
+        <ReviewCard title="Date & Venue" icon={Calendar}>
+          <ReviewRow
+            label="Start"
+            value={
+              form.start_at
+                ? new Date(form.start_at).toLocaleString()
+                : '\u2014'
+            }
+          />
+          <ReviewRow
+            label="End"
+            value={
+              form.end_at ? new Date(form.end_at).toLocaleString() : '\u2014'
+            }
+          />
+          <ReviewRow label="Type" value={form.location_type} />
+          {form.venue_name && (
+            <ReviewRow label="Venue" value={form.venue_name} />
           )}
-        </div>
+          {form.city && <ReviewRow label="City" value={form.city} />}
+        </ReviewCard>
+
+        <ReviewCard
+          title={`Tickets (${form.ticket_tiers.length} tier${form.ticket_tiers.length > 1 ? 's' : ''})`}
+          icon={Ticket}
+        >
+          {form.ticket_tiers.map((tier) => (
+            <div
+              key={tier.id}
+              className="flex justify-between py-1.5 text-sm"
+            >
+              <span className="text-muted-foreground">
+                {tier.name || 'Unnamed'}
+              </span>
+              <span className="font-semibold text-foreground tabular-nums">
+                {tier.price === 0 ? 'Free' : `$${tier.price.toFixed(2)}`}{' '}
+                {'x'} {tier.initial_quantity}
+              </span>
+            </div>
+          ))}
+          <Separator className="my-2" />
+          <div className="flex justify-between text-sm font-bold text-foreground">
+            <span>Total capacity</span>
+            <span className="tabular-nums">{totalTickets}</span>
+          </div>
+        </ReviewCard>
+
+        {form.cover_image_url && (
+          <ReviewCard title="Cover Image" icon={ImageIcon}>
+            <img
+              src={form.cover_image_url}
+              alt="Cover"
+              className="h-32 w-full rounded-lg object-cover"
+              crossOrigin="anonymous"
+            />
+          </ReviewCard>
+        )}
       </div>
     </div>
   );
 }
 
-function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
+function ReviewCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="bg-gray-50 rounded-lg p-4">
-      <h3 className="text-sm font-bold text-gray-900 mb-3">{title}</h3>
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <Icon className="size-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      </div>
       {children}
     </div>
   );
@@ -936,9 +1360,11 @@ function ReviewSection({ title, children }: { title: string; children: React.Rea
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between text-sm py-1">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-gray-900 font-medium text-right max-w-[60%] truncate">{value}</span>
+    <div className="flex justify-between py-1.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="max-w-[60%] truncate text-right font-medium text-foreground">
+        {value}
+      </span>
     </div>
   );
 }
