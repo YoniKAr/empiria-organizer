@@ -138,7 +138,7 @@
   }
 
   50% {
-    transform: translateY(-12px);
+    transform: translateY(-14px);
   }
 }
 
@@ -146,13 +146,13 @@
 
   0%,
   100% {
-    opacity: 0.4;
-    transform: scale(1) translateY(0px);
+    opacity: 0.6;
+    transform: scale(0.98) translateY(0px);
   }
 
   50% {
-    opacity: 0.7;
-    transform: scale(1.02) translateY(-12px);
+    opacity: 1;
+    transform: scale(1.04) translateY(-14px);
   }
 }
 
@@ -160,24 +160,24 @@
 
   0%,
   100% {
-    opacity: 0.5;
-    transform: scale(1) translateY(0px);
+    opacity: 0.7;
+    transform: scale(0.99) translateY(0px);
   }
 
   50% {
-    opacity: 0.85;
-    transform: scale(1.01) translateY(-12px);
+    opacity: 1;
+    transform: scale(1.02) translateY(-14px);
   }
 }
 
 .animate-float {
-  animation: float 4s ease-in-out infinite;
+  animation: float 5s ease-in-out infinite;
 }
 
 .animate-float-glow {
-  animation: float-glow 4s ease-in-out infinite;
+  animation: float-glow 5s ease-in-out infinite;
 }
 
 .animate-float-glow-inner {
-  animation: float-glow-inner 4s ease-in-out infinite;
+  animation: float-glow-inner 5s ease-in-out infinite;
 }

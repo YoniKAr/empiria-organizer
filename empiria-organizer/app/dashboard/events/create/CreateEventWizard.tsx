@@ -497,7 +497,7 @@ export default function CreateEventWizard({
 
       {/* ─── RIGHT: Live Preview Panel ─────────────────────────────────── */}
       <aside className="hidden border-l border-border lg:block lg:w-[40%]">
-        <div className="sticky top-0 h-screen overflow-y-auto bg-card">
+        <div className="sticky top-0 h-screen overflow-y-auto bg-[#faf9f7]">
           <LivePreview form={form} categories={categories} />
         </div>
       </aside>
@@ -550,12 +550,22 @@ function LivePreview({
 
       {/* Floating card with orange glow */}
       <div className="relative mx-auto w-full max-w-sm">
-        {/* Animated orange glow */}
-        <div className="absolute -inset-3 animate-float-glow rounded-3xl bg-primary/20 blur-xl" />
-        <div className="absolute -inset-1.5 animate-float-glow-inner rounded-2xl bg-primary/10 blur-md" />
+        {/* Animated orange glow - outer layer */}
+        <div
+          className="absolute -inset-4 animate-float-glow rounded-3xl blur-2xl"
+          style={{ background: 'rgba(225, 140, 50, 0.25)' }}
+        />
+        {/* Animated orange glow - inner layer */}
+        <div
+          className="absolute -inset-2 animate-float-glow-inner rounded-2xl blur-lg"
+          style={{ background: 'rgba(225, 140, 50, 0.15)' }}
+        />
 
         {/* Event Card */}
-        <div className="relative animate-float overflow-hidden rounded-2xl border border-primary/20 bg-card shadow-xl shadow-primary/10">
+        <div
+          className="relative animate-float overflow-hidden rounded-2xl bg-card shadow-2xl"
+          style={{ border: '1.5px solid rgba(225, 140, 50, 0.3)' }}
+        >
           {/* Image */}
           <div className="relative h-44 overflow-hidden bg-muted">
             {form.cover_image_url ? (
@@ -566,11 +576,9 @@ function LivePreview({
                 crossOrigin="anonymous"
               />
             ) : (
-              <img
-                src="/images/event-placeholder.jpg"
-                alt="Event placeholder"
-                className="h-full w-full object-cover opacity-70"
-              />
+              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#f5e6d3] to-[#e8d5c0]">
+                <ImageIcon className="size-12 text-[#c4a882]" />
+              </div>
             )}
 
             {/* Location badge */}
