@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className="light">
       <body>
         {/* Banner renders at the very top, above all dashboard UI.
             It only appears when an admin is in perspective mode. */}
