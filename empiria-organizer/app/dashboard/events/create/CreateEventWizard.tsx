@@ -576,8 +576,8 @@ function LivePreview({
                 crossOrigin="anonymous"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#f5e6d3] to-[#e8d5c0]">
-                <ImageIcon className="size-12 text-[#c4a882]" />
+              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#F98C1F] to-[#e07b10]">
+                <ImageIcon className="size-12 text-white/80" />
               </div>
             )}
 
