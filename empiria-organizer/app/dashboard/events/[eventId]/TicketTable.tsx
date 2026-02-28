@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { cancelTicketWithRefund, cancelOrderWithRefund } from '@/lib/actions';
+import { cancelTicketWithRefund, cancelOrderWithRefund, sendTicketsToEmail, reissueTicket } from '@/lib/actions';
 import { useRouter } from 'next/navigation';
 import { formatCurrency } from '@/lib/utils';
+import { Mail, RefreshCw } from 'lucide-react';
 
 interface Ticket {
   id: string;
@@ -37,7 +38,7 @@ const statusStyles: Record<string, string> = {
 function groupByOrder(tickets: Ticket[]): OrderGroup[] {
   const map = new Map<string, Ticket[]>();
   for (const t of tickets) {
-    const key = t.order_id || t.id; // fallback to ticket id if no order
+    const key = t.order_id || t.id;
     const group = map.get(key) || [];
     group.push(t);
     map.set(key, group);
@@ -54,78 +55,143 @@ function groupByOrder(tickets: Ticket[]): OrderGroup[] {
   }));
 }
 
-type CancelMode = 'ticket' | 'order';
+type ModalType = 'cancel-ticket' | 'cancel-order' | 'send-email' | 'reissue';
 
 export function TicketTable({ tickets }: { tickets: Ticket[] }) {
-  const [cancelTarget, setCancelTarget] = useState<{ mode: CancelMode; ticketId?: string; orderId?: string } | null>(null);
+  const [modal, setModal] = useState<{ type: ModalType; ticketId?: string; orderId?: string } | null>(null);
   const [reason, setReason] = useState('');
   const [releaseToPool, setReleaseToPool] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailName, setEmailName] = useState('');
+  const [reissueName, setReissueName] = useState('');
+  const [reissueEmail, setReissueEmail] = useState('');
+  const [reissueReason, setReissueReason] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
   const orderGroups = groupByOrder(tickets);
 
-  function openTicketModal(ticketId: string) {
-    setCancelTarget({ mode: 'ticket', ticketId });
+  function openCancelTicketModal(ticketId: string) {
+    setModal({ type: 'cancel-ticket', ticketId });
     setReason('');
     setReleaseToPool(false);
     setFeedback(null);
   }
 
-  function openOrderModal(orderId: string) {
-    setCancelTarget({ mode: 'order', orderId });
+  function openCancelOrderModal(orderId: string) {
+    setModal({ type: 'cancel-order', orderId });
     setReason('');
     setReleaseToPool(false);
+    setFeedback(null);
+  }
+
+  function openSendEmailModal(ticket: Ticket) {
+    setModal({ type: 'send-email', ticketId: ticket.id });
+    setEmailTo(ticket.attendee_email);
+    setEmailName(ticket.attendee_name);
+    setFeedback(null);
+  }
+
+  function openReissueModal(ticket: Ticket) {
+    setModal({ type: 'reissue', ticketId: ticket.id, orderId: ticket.order_id });
+    setReissueName('');
+    setReissueEmail('');
+    setReissueReason('');
     setFeedback(null);
   }
 
   function closeModal() {
-    setCancelTarget(null);
-    setReason('');
-    setReleaseToPool(false);
+    setModal(null);
     setFeedback(null);
   }
 
-  function handleConfirm() {
-    if (!cancelTarget || !reason.trim()) return;
+  function handleCancelConfirm() {
+    if (!modal || !reason.trim()) return;
 
     startTransition(async () => {
       let success = false;
       let errorMsg = '';
 
-      if (cancelTarget.mode === 'ticket' && cancelTarget.ticketId) {
-        const result = await cancelTicketWithRefund(cancelTarget.ticketId, reason, releaseToPool);
+      if (modal.type === 'cancel-ticket' && modal.ticketId) {
+        const result = await cancelTicketWithRefund(modal.ticketId, reason, releaseToPool);
         success = result.success;
         if (!result.success) errorMsg = result.error;
-      } else if (cancelTarget.mode === 'order' && cancelTarget.orderId) {
-        const result = await cancelOrderWithRefund(cancelTarget.orderId, reason, releaseToPool);
+      } else if (modal.type === 'cancel-order' && modal.orderId) {
+        const result = await cancelOrderWithRefund(modal.orderId, reason, releaseToPool);
         success = result.success;
         if (!result.success) errorMsg = result.error;
       }
 
       if (success) {
         const poolMsg = releaseToPool ? ' Slots released back to pool.' : '';
-        const msg = cancelTarget.mode === 'order'
+        const msg = modal.type === 'cancel-order'
           ? `All valid tickets cancelled and refunded.${poolMsg}`
           : `Ticket cancelled and refunded.${poolMsg}`;
         setFeedback({ type: 'success', message: msg });
-        setTimeout(() => {
-          closeModal();
-          router.refresh();
-        }, 1500);
+        setTimeout(() => { closeModal(); router.refresh(); }, 1500);
       } else {
         setFeedback({ type: 'error', message: errorMsg });
       }
     });
   }
 
-  // Get info for the modal
-  const modalTicket = cancelTarget?.mode === 'ticket' && cancelTarget.ticketId
-    ? tickets.find((t) => t.id === cancelTarget.ticketId)
+  function handleSendEmail() {
+    if (!modal?.ticketId || !emailTo.trim()) return;
+
+    startTransition(async () => {
+      const result = await sendTicketsToEmail({
+        ticketIds: [modal.ticketId!],
+        recipientEmail: emailTo.trim(),
+        recipientName: emailName.trim(),
+      });
+
+      if (result.success) {
+        setFeedback({ type: 'success', message: `Ticket sent to ${emailTo}` });
+        setTimeout(() => closeModal(), 1500);
+      } else {
+        setFeedback({ type: 'error', message: result.error });
+      }
+    });
+  }
+
+  function handleReissue() {
+    if (!modal?.ticketId || !modal?.orderId || !reissueName.trim() || !reissueEmail.trim() || !reissueReason.trim()) return;
+
+    startTransition(async () => {
+      const result = await reissueTicket({
+        orderId: modal.orderId!,
+        oldTicketId: modal.ticketId!,
+        newAttendeeName: reissueName.trim(),
+        newAttendeeEmail: reissueEmail.trim(),
+        reason: reissueReason.trim(),
+      });
+
+      if (result.success) {
+        setFeedback({ type: 'success', message: 'Ticket reissued. Sending email...' });
+        // Auto-send email with new ticket
+        const emailResult = await sendTicketsToEmail({
+          ticketIds: [result.data.newTicketId],
+          recipientEmail: reissueEmail.trim(),
+          recipientName: reissueName.trim(),
+        });
+        if (emailResult.success) {
+          setFeedback({ type: 'success', message: `Ticket reissued and sent to ${reissueEmail.trim()}` });
+        } else {
+          setFeedback({ type: 'success', message: `Ticket reissued (email failed: ${emailResult.error})` });
+        }
+        setTimeout(() => { closeModal(); router.refresh(); }, 1500);
+      } else {
+        setFeedback({ type: 'error', message: result.error });
+      }
+    });
+  }
+
+  const modalTicket = (modal?.type === 'cancel-ticket' || modal?.type === 'send-email' || modal?.type === 'reissue') && modal.ticketId
+    ? tickets.find((t) => t.id === modal.ticketId)
     : null;
-  const modalOrder = cancelTarget?.mode === 'order' && cancelTarget.orderId
-    ? orderGroups.find((g) => g.order_id === cancelTarget.orderId)
+  const modalOrder = modal?.type === 'cancel-order' && modal.orderId
+    ? orderGroups.find((g) => g.order_id === modal.orderId)
     : null;
 
   return (
@@ -151,7 +217,7 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
               </div>
               {group.hasValidTickets && group.validCount > 1 && (
                 <button
-                  onClick={() => openOrderModal(group.order_id)}
+                  onClick={() => openCancelOrderModal(group.order_id)}
                   className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline"
                 >
                   Cancel Entire Order ({group.validCount})
@@ -198,14 +264,34 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      {ticket.status === 'valid' && ticket.tier_price > 0 && (
-                        <button
-                          onClick={() => openTicketModal(ticket.id)}
-                          className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline"
-                        >
-                          Cancel &amp; Refund
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {ticket.status === 'valid' && (
+                          <>
+                            <button
+                              onClick={() => openSendEmailModal(ticket)}
+                              className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                              title="Send to email"
+                            >
+                              <Mail size={14} />
+                            </button>
+                            <button
+                              onClick={() => openReissueModal(ticket)}
+                              className="p-1 text-gray-400 hover:text-orange-600 transition-colors"
+                              title="Reissue ticket"
+                            >
+                              <RefreshCw size={14} />
+                            </button>
+                          </>
+                        )}
+                        {ticket.status === 'valid' && ticket.tier_price > 0 && (
+                          <button
+                            onClick={() => openCancelTicketModal(ticket.id)}
+                            className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline"
+                          >
+                            Cancel &amp; Refund
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -216,11 +302,11 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
       </div>
 
       {/* Cancel Modal */}
-      {cancelTarget && (modalTicket || modalOrder) && (
+      {(modal?.type === 'cancel-ticket' || modal?.type === 'cancel-order') && (modalTicket || modalOrder) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-bold text-gray-900 mb-1">
-              {cancelTarget.mode === 'order' ? 'Cancel Entire Order' : 'Cancel & Refund Ticket'}
+              {modal.type === 'cancel-order' ? 'Cancel Entire Order' : 'Cancel & Refund Ticket'}
             </h3>
 
             {modalTicket && (
@@ -249,9 +335,7 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
               </p>
             )}
 
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Reason for cancellation
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for cancellation</label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -260,65 +344,131 @@ export function TicketTable({ tickets }: { tickets: Ticket[] }) {
               placeholder="e.g. Event rescheduled, duplicate purchase, etc."
             />
 
-            {/* Pool option */}
             <div className="mt-4 space-y-2">
-              <p className="text-sm font-medium text-gray-700">What happens to the ticket slot{cancelTarget.mode === 'order' ? 's' : ''}?</p>
+              <p className="text-sm font-medium text-gray-700">What happens to the ticket slot{modal.type === 'cancel-order' ? 's' : ''}?</p>
               <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 has-[:checked]:border-black has-[:checked]:bg-gray-50">
-                <input
-                  type="radio"
-                  name="poolOption"
-                  checked={!releaseToPool}
-                  onChange={() => setReleaseToPool(false)}
-                  className="mt-0.5 accent-black"
-                />
+                <input type="radio" name="poolOption" checked={!releaseToPool} onChange={() => setReleaseToPool(false)} className="mt-0.5 accent-black" />
                 <div>
                   <span className="text-sm font-medium text-gray-900">Keep cancelled</span>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Ticket{cancelTarget.mode === 'order' ? 's stay' : ' stays'} on record as cancelled. Total capacity is reduced permanently.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Ticket{modal.type === 'cancel-order' ? 's stay' : ' stays'} on record as cancelled. Total capacity is reduced permanently.</p>
                 </div>
               </label>
               <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 has-[:checked]:border-black has-[:checked]:bg-gray-50">
-                <input
-                  type="radio"
-                  name="poolOption"
-                  checked={releaseToPool}
-                  onChange={() => setReleaseToPool(true)}
-                  className="mt-0.5 accent-black"
-                />
+                <input type="radio" name="poolOption" checked={releaseToPool} onChange={() => setReleaseToPool(true)} className="mt-0.5 accent-black" />
                 <div>
                   <span className="text-sm font-medium text-gray-900">Release back to pool</span>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Ticket{cancelTarget.mode === 'order' ? 's are' : ' is'} marked as refunded and the slot{cancelTarget.mode === 'order' ? 's become' : ' becomes'} available for purchase.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Ticket{modal.type === 'cancel-order' ? 's are' : ' is'} marked as refunded and the slot{modal.type === 'cancel-order' ? 's become' : ' becomes'} available for purchase.</p>
                 </div>
               </label>
             </div>
 
             {feedback && (
-              <p
-                className={`mt-3 text-sm font-medium ${
-                  feedback.type === 'success' ? 'text-green-600' : 'text-red-600'
-                }`}
-              >
+              <p className={`mt-3 text-sm font-medium ${feedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
                 {feedback.message}
               </p>
             )}
 
             <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={closeModal}
-                disabled={isPending}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                Go Back
+              <button onClick={closeModal} disabled={isPending} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Go Back</button>
+              <button onClick={handleCancelConfirm} disabled={isPending || !reason.trim()} className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">
+                {isPending ? 'Processing...' : 'Confirm Cancellation'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Email Modal */}
+      {modal?.type === 'send-email' && modalTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Send Ticket to Email</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Send the QR code ticket for <span className="font-medium text-gray-700">{modalTicket.tier_name}</span> to the recipient.
+            </p>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">Recipient Name</label>
+            <input
+              type="text"
+              value={emailName}
+              onChange={(e) => setEmailName(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm mb-3 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+            />
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">Recipient Email</label>
+            <input
+              type="email"
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm mb-3 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+            />
+
+            {feedback && (
+              <p className={`text-sm font-medium mb-3 ${feedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {feedback.message}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={closeModal} disabled={isPending} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button onClick={handleSendEmail} disabled={isPending || !emailTo.trim()} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50">
+                {isPending ? 'Sending...' : 'Send Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reissue Modal */}
+      {modal?.type === 'reissue' && modalTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Reissue Ticket</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Cancel the current ticket for <span className="font-medium text-gray-700">{modalTicket.attendee_name}</span> and issue a new one.
+            </p>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">New Attendee Name</label>
+            <input
+              type="text"
+              value={reissueName}
+              onChange={(e) => setReissueName(e.target.value)}
+              placeholder="New attendee name"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm mb-3 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+            />
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">New Attendee Email</label>
+            <input
+              type="email"
+              value={reissueEmail}
+              onChange={(e) => setReissueEmail(e.target.value)}
+              placeholder="new@example.com"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm mb-3 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+            />
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Reissue</label>
+            <input
+              type="text"
+              value={reissueReason}
+              onChange={(e) => setReissueReason(e.target.value)}
+              placeholder="e.g. Name change, transfer to another person"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm mb-3 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+            />
+
+            {feedback && (
+              <p className={`text-sm font-medium mb-3 ${feedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {feedback.message}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={closeModal} disabled={isPending} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
               <button
-                onClick={handleConfirm}
-                disabled={isPending || !reason.trim()}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50"
+                onClick={handleReissue}
+                disabled={isPending || !reissueName.trim() || !reissueEmail.trim() || !reissueReason.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#F98C1F] hover:bg-[#e07b10] rounded-lg disabled:opacity-50"
               >
-                {isPending ? 'Processing…' : 'Confirm Cancellation'}
+                {isPending ? 'Reissuing...' : 'Reissue Ticket'}
               </button>
             </div>
           </div>

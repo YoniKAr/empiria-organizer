@@ -1,10 +1,12 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Calendar, MapPin, Users } from 'lucide-react';
 import { TicketTable } from './TicketTable';
 import { EventActions } from './EventActions';
+import { IssueTicketsModal } from './IssueTicketsModal';
 
 interface PageProps {
   params: Promise<{ eventId: string }>;
@@ -16,12 +18,13 @@ export default async function EventDetailPage({ params }: PageProps) {
   if (!session?.user) redirect('/auth/login?returnTo=/dashboard/events');
 
   const supabase = getSupabaseAdmin();
+  const effectiveOrgId = await getEffectiveOrganizerId();
 
   // Fetch event + verify ownership
   const { data: event } = await supabase
     .from('events')
     .select(`
-      id, title, slug, status, start_at, end_at,
+      id, title, slug, status,
       venue_name, city, location_type,
       total_capacity, total_tickets_sold,
       cover_image_url, currency, organizer_id
@@ -29,9 +32,23 @@ export default async function EventDetailPage({ params }: PageProps) {
     .eq('id', eventId)
     .single();
 
-  if (!event || event.organizer_id !== session.user.sub) {
+  if (!event || event.organizer_id !== effectiveOrgId) {
     redirect('/dashboard/events');
   }
+
+  // Fetch occurrences for this event
+  const { data: occurrences } = await supabase
+    .from('event_occurrences')
+    .select('id, starts_at, ends_at, label, is_cancelled')
+    .eq('event_id', eventId)
+    .order('starts_at', { ascending: true });
+
+  // Fetch ticket tiers for this event
+  const { data: tiers } = await supabase
+    .from('ticket_tiers')
+    .select('id, name, price, currency, remaining_quantity')
+    .eq('event_id', eventId)
+    .order('price', { ascending: true });
 
   // Fetch all tickets for this event with tier + order info
   const { data: tickets, error: ticketsError } = await supabase
@@ -64,7 +81,16 @@ export default async function EventDetailPage({ params }: PageProps) {
     };
   });
 
-  const startDate = event.start_at ? new Date(event.start_at) : null;
+  const tierOptions = (tiers || []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    price: Number(t.price),
+    currency: t.currency || event.currency || 'cad',
+    remaining: t.remaining_quantity,
+  }));
+
+  const firstOcc = occurrences?.[0];
+  const startDate = firstOcc ? new Date(firstOcc.starts_at) : null;
   const venue = [event.venue_name, event.city].filter(Boolean).join(', ');
 
   const statusColors: Record<string, string> = {
@@ -115,7 +141,7 @@ export default async function EventDetailPage({ params }: PageProps) {
               )}
               <span className="flex items-center gap-1">
                 <Users size={14} />
-                {event.total_tickets_sold}/{event.total_capacity || '∞'} sold
+                {event.total_tickets_sold}/{event.total_capacity || '\u221E'} sold
               </span>
             </div>
           </div>
@@ -127,7 +153,7 @@ export default async function EventDetailPage({ params }: PageProps) {
               rel="noopener noreferrer"
               className="text-sm text-orange-600 hover:underline flex-shrink-0"
             >
-              View live page →
+              View live page &rarr;
             </a>
           )}
         </div>
@@ -148,6 +174,9 @@ export default async function EventDetailPage({ params }: PageProps) {
           <h2 className="text-lg font-bold text-gray-900">
             Tickets ({allTickets.length})
           </h2>
+          {tierOptions.length > 0 && (
+            <IssueTicketsModal eventId={event.id} tiers={tierOptions} />
+          )}
         </div>
 
         {allTickets.length === 0 ? (

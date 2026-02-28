@@ -1,5 +1,6 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
@@ -11,7 +12,7 @@ export default async function DashboardHome() {
   if (!session?.user) redirect('/auth/login?returnTo=/dashboard');
 
   const supabase = getSupabaseAdmin();
-  const orgId = session.user.sub; // 
+  const orgId = await getEffectiveOrganizerId();
 
   // Fetch profile + all organizer data in parallel
   const [profileRes, eventsRes, ordersRes, ticketsRes] = await Promise.all([
@@ -23,7 +24,7 @@ export default async function DashboardHome() {
 
     supabase
       .from('events')
-      .select('id, title, slug, status, start_at, total_tickets_sold, total_capacity, created_at')
+      .select('id, title, slug, status, total_tickets_sold, total_capacity, created_at, event_occurrences(starts_at)')
       .eq('organizer_id', orgId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
@@ -145,8 +146,8 @@ export default async function DashboardHome() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{event.title}</p>
                     <p className="text-xs text-gray-500">
-                      {event.start_at
-                        ? new Date(event.start_at).toLocaleDateString('en-CA', {
+                      {event.event_occurrences?.[0]?.starts_at
+                        ? new Date(event.event_occurrences[0].starts_at).toLocaleDateString('en-CA', {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',
