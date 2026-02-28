@@ -202,7 +202,10 @@ export default function RevenueChart({ orders, currency }: Props) {
                 </div>
             ) : (
                 <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <LineChart
+                        data={chartData.length === 1 ? [{ date: '', revenue: 0 }, ...chartData] : chartData}
+                        margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                    >
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                         <XAxis
                             dataKey="date"
