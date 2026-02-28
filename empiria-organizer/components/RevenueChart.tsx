@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import {
-    AreaChart,
-    Area,
+    LineChart,
+    Line,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -181,8 +181,8 @@ export default function RevenueChart({ orders, currency }: Props) {
                             key={p.value}
                             onClick={() => setPeriod(p.value)}
                             className={`px-3 py-1 text-xs font-semibold rounded-full transition-all duration-150 ${period === p.value
-                                    ? 'bg-[#F98C1F] text-white shadow-sm'
-                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                ? 'bg-[#F98C1F] text-white shadow-sm'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                 }`}
                         >
                             {p.label}
@@ -202,13 +202,7 @@ export default function RevenueChart({ orders, currency }: Props) {
                 </div>
             ) : (
                 <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <defs>
-                            <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#F98C1F" stopOpacity={0.25} />
-                                <stop offset="95%" stopColor="#F98C1F" stopOpacity={0} />
-                            </linearGradient>
-                        </defs>
+                    <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                         <XAxis
                             dataKey="date"
@@ -228,16 +222,15 @@ export default function RevenueChart({ orders, currency }: Props) {
                             content={<CustomTooltip currency={currency} />}
                             cursor={{ stroke: '#F98C1F', strokeWidth: 1, strokeDasharray: '4 4' }}
                         />
-                        <Area
+                        <Line
                             type="monotone"
                             dataKey="revenue"
                             stroke="#F98C1F"
                             strokeWidth={2.5}
-                            fill="url(#revenueGradient)"
                             dot={false}
                             activeDot={{ r: 5, fill: '#F98C1F', stroke: '#fff', strokeWidth: 2 }}
                         />
-                    </AreaChart>
+                    </LineChart>
                 </ResponsiveContainer>
             )}
         </div>
