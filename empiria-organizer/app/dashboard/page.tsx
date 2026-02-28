@@ -1,5 +1,6 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
@@ -11,7 +12,7 @@ export default async function DashboardHome() {
   if (!session?.user) redirect('/auth/login?returnTo=/dashboard');
 
   const supabase = getSupabaseAdmin();
-  const orgId = session.user.sub; // 
+  const orgId = await getEffectiveOrganizerId();
 
   // Fetch profile + all organizer data in parallel
   const [profileRes, eventsRes, ordersRes, ticketsRes] = await Promise.all([

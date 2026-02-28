@@ -1,6 +1,7 @@
 import { auth0 } from '@/lib/auth0';
 import { redirect } from 'next/navigation';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import CreateEventWizard from './CreateEventWizard';
 
 interface PageProps {
@@ -20,12 +21,13 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
   if (!session?.user) redirect('/auth/login?returnTo=/dashboard/events/create');
 
   const supabase = getSupabaseAdmin();
+  const effectiveOrgId = await getEffectiveOrganizerId();
 
   // Gate: Stripe must be connected before creating events
   const { data: user } = await supabase
     .from('users')
     .select('stripe_onboarding_completed')
-    .eq('auth0_id', session.user.sub)
+    .eq('auth0_id', effectiveOrgId)
     .single();
 
   if (!user?.stripe_onboarding_completed) {
@@ -52,7 +54,7 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
       .eq('id', editEventId)
       .single();
 
-    if (!event || event.organizer_id !== session.user.sub) {
+    if (!event || event.organizer_id !== effectiveOrgId) {
       redirect('/dashboard/events');
     }
 

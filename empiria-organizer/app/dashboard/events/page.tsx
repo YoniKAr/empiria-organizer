@@ -1,5 +1,6 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { formatCurrency } from '@/lib/utils';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
@@ -10,6 +11,7 @@ export default async function EventsList() {
   if (!session?.user) redirect('/auth/login?returnTo=/dashboard/events');
 
   const supabase = getSupabaseAdmin();
+  const effectiveOrgId = await getEffectiveOrganizerId();
 
   const { data: events } = await supabase
     .from('events')
@@ -20,7 +22,7 @@ export default async function EventsList() {
       cover_image_url, currency, created_at,
       ticket_tiers(id, name, price, initial_quantity, remaining_quantity)
     `)
-    .eq('organizer_id', session.user.sub)
+    .eq('organizer_id', effectiveOrgId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
 

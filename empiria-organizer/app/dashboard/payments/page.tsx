@@ -1,5 +1,6 @@
 import { auth0 } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { formatCurrency } from '@/lib/utils';
 import StripeConnectButton from './StripeConnectButton';
 
@@ -11,11 +12,12 @@ export default async function PaymentsPage({
   const session = await auth0.getSession();
   const supabase = getSupabaseAdmin();
   const params = await searchParams;
+  const effectiveOrgId = await getEffectiveOrganizerId();
 
   const { data: user } = await supabase
     .from('users')
     .select('stripe_account_id, stripe_onboarding_completed, stripe_account_type, default_currency')
-    .eq('auth0_id', session?.user.sub)
+    .eq('auth0_id', effectiveOrgId)
     .single();
 
   const currency = user?.default_currency || 'cad';
@@ -28,7 +30,7 @@ export default async function PaymentsPage({
       currency, status, created_at,
       events!inner(title, organizer_id)
     `)
-    .eq('events.organizer_id', session?.user.sub)
+    .eq('events.organizer_id', effectiveOrgId)
     .order('created_at', { ascending: false })
     .limit(20);
 
