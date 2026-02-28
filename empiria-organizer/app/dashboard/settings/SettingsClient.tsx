@@ -1,8 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { updateUserName } from '@/lib/actions';
 
-export default function SettingsClient({ email, isGoogleUser }: { email: string; isGoogleUser: boolean }) {
+export default function SettingsClient({
+    email,
+    isGoogleUser,
+    defaultFirstName,
+    defaultLastName,
+}: {
+    email: string;
+    isGoogleUser: boolean;
+    defaultFirstName: string;
+    defaultLastName: string;
+}) {
     const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
 
     return (
@@ -26,7 +37,13 @@ export default function SettingsClient({ email, isGoogleUser }: { email: string;
                 ))}
             </div>
 
-            {activeTab === 'profile' && <ProfileSection email={email} />}
+            {activeTab === 'profile' && (
+                <ProfileSection
+                    email={email}
+                    defaultFirstName={defaultFirstName}
+                    defaultLastName={defaultLastName}
+                />
+            )}
             {activeTab === 'security' && <SecuritySection isGoogleUser={isGoogleUser} />}
         </div>
     );
@@ -34,7 +51,36 @@ export default function SettingsClient({ email, isGoogleUser }: { email: string;
 
 // ─── Profile Section ─────────────────────────────────────────────────────────
 
-function ProfileSection({ email }: { email: string }) {
+function ProfileSection({
+    email,
+    defaultFirstName,
+    defaultLastName,
+}: {
+    email: string;
+    defaultFirstName: string;
+    defaultLastName: string;
+}) {
+    const [firstName, setFirstName] = useState(defaultFirstName);
+    const [lastName, setLastName] = useState(defaultLastName);
+    const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [errorMsg, setErrorMsg] = useState('');
+    const [isPending, startTransition] = useTransition();
+
+    const handleSave = () => {
+        startTransition(async () => {
+            setStatus('saving');
+            setErrorMsg('');
+            const result = await updateUserName(firstName, lastName);
+            if (result.success) {
+                setStatus('saved');
+                setTimeout(() => setStatus('idle'), 2500);
+            } else {
+                setStatus('error');
+                setErrorMsg(result.error);
+            }
+        });
+    };
+
     return (
         <div className="space-y-10">
             <section>
@@ -68,8 +114,30 @@ function ProfileSection({ email }: { email: string }) {
                 <div className="space-y-6">
                     {/* First + Last Name */}
                     <div className="grid grid-cols-2 gap-8">
-                        <FieldRow label="FIRST NAME" placeholder="First name" />
-                        <FieldRow label="LAST NAME" placeholder="Last name" />
+                        <div>
+                            <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-2">
+                                FIRST NAME
+                            </p>
+                            <input
+                                type="text"
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                                placeholder="First name"
+                                className="w-full text-sm text-gray-800 bg-transparent border-b border-gray-200 pb-2 focus:outline-none focus:border-[#F98C1F] placeholder:text-gray-300 transition-colors"
+                            />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-2">
+                                LAST NAME
+                            </p>
+                            <input
+                                type="text"
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                                placeholder="Last name"
+                                className="w-full text-sm text-gray-800 bg-transparent border-b border-gray-200 pb-2 focus:outline-none focus:border-[#F98C1F] placeholder:text-gray-300 transition-colors"
+                            />
+                        </div>
                     </div>
 
                     {/* Email — read-only, prefilled from session */}
@@ -86,9 +154,20 @@ function ProfileSection({ email }: { email: string }) {
                     </div>
                 </div>
 
-                <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
-                    <button className="bg-[#F98C1F] text-white text-sm font-medium px-5 py-2 rounded-lg hover:bg-[#e07b10] transition-colors">
-                        Save Changes
+                {errorMsg && (
+                    <p className="mt-4 text-sm text-red-500">{errorMsg}</p>
+                )}
+
+                <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-end gap-3">
+                    {status === 'saved' && (
+                        <span className="text-sm text-green-600 font-medium">✓ Changes saved</span>
+                    )}
+                    <button
+                        onClick={handleSave}
+                        disabled={isPending}
+                        className="bg-[#F98C1F] text-white text-sm font-medium px-5 py-2 rounded-lg hover:bg-[#e07b10] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        {isPending ? 'Saving…' : 'Save Changes'}
                     </button>
                 </div>
             </section>

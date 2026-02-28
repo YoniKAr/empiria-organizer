@@ -902,3 +902,29 @@ export async function cancelOrderWithRefund(
 
   return { success: true, data: { refundedCount: ticketsToCancel.length, totalRefund: totalRefundDisplay } };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// USER PROFILE ACTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function updateUserName(
+  firstName: string,
+  lastName: string
+): Promise<ActionResult<{ full_name: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const full_name = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
+
+  if (!full_name) return { success: false, error: 'Name cannot be empty' };
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('users')
+    .update({ full_name })
+    .eq('auth0_id', user.sub);
+
+  if (error) return { success: false, error: error.message };
+
+  return { success: true, data: { full_name } };
+}

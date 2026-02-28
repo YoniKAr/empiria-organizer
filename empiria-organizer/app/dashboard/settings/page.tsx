@@ -1,4 +1,5 @@
 import { auth0 } from '@/lib/auth0';
+import { getSupabaseAdmin } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
 import SettingsClient from './SettingsClient';
 
@@ -9,5 +10,25 @@ export default async function SettingsPage() {
   const email = session.user.email ?? '';
   const isGoogleUser = typeof session.user.sub === 'string' && session.user.sub.startsWith('google-oauth2|');
 
-  return <SettingsClient email={email} isGoogleUser={isGoogleUser} />;
+  // Fetch the user's stored name from Supabase
+  const supabase = getSupabaseAdmin();
+  const { data: profile } = await supabase
+    .from('users')
+    .select('full_name')
+    .eq('auth0_id', session.user.sub)
+    .single();
+
+  const fullName = profile?.full_name ?? '';
+  const spaceIndex = fullName.indexOf(' ');
+  const firstName = spaceIndex === -1 ? fullName : fullName.slice(0, spaceIndex);
+  const lastName = spaceIndex === -1 ? '' : fullName.slice(spaceIndex + 1);
+
+  return (
+    <SettingsClient
+      email={email}
+      isGoogleUser={isGoogleUser}
+      defaultFirstName={firstName}
+      defaultLastName={lastName}
+    />
+  );
 }
