@@ -54,6 +54,13 @@ interface TicketTier {
   is_hidden: boolean;
 }
 
+interface Occurrence {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  label: string;
+}
+
 interface EventFormData {
   title: string;
   slug: string;
@@ -61,8 +68,9 @@ interface EventFormData {
   category_id: string;
   tags: string[];
   cover_image_url: string;
-  start_at: string;
-  end_at: string;
+  sales_start_at: string;
+  sales_end_at: string;
+  occurrences: Occurrence[];
   location_type: 'physical' | 'virtual' | 'hybrid';
   venue_name: string;
   address_text: string;
@@ -86,8 +94,8 @@ interface ExistingEvent {
   category_id: string;
   tags: string[];
   cover_image_url: string;
-  start_at: string;
-  end_at: string;
+  sales_start_at: string;
+  sales_end_at: string;
   location_type: 'physical' | 'virtual' | 'hybrid';
   venue_name: string;
   address_text: string;
@@ -95,6 +103,7 @@ interface ExistingEvent {
   currency: string;
   status: string;
   ticket_tiers: TicketTier[];
+  event_occurrences: { id: string; starts_at: string; ends_at: string; label: string }[];
 }
 
 const STEPS = [
@@ -118,6 +127,13 @@ const DEFAULT_TIER: TicketTier = {
   is_hidden: false,
 };
 
+const DEFAULT_OCCURRENCE: Occurrence = {
+  id: crypto.randomUUID(),
+  starts_at: '',
+  ends_at: '',
+  label: '',
+};
+
 const INITIAL_FORM: EventFormData = {
   title: '',
   slug: '',
@@ -125,8 +141,9 @@ const INITIAL_FORM: EventFormData = {
   category_id: '',
   tags: [],
   cover_image_url: '',
-  start_at: '',
-  end_at: '',
+  sales_start_at: '',
+  sales_end_at: '',
+  occurrences: [{ ...DEFAULT_OCCURRENCE }],
   location_type: 'physical',
   venue_name: '',
   address_text: '',
@@ -158,6 +175,12 @@ export default function CreateEventWizard({
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<EventFormData>(() => {
     if (existingEvent) {
+      const occs = (existingEvent.event_occurrences || []).map((o) => ({
+        id: o.id,
+        starts_at: o.starts_at,
+        ends_at: o.ends_at,
+        label: o.label || '',
+      }));
       return {
         title: existingEvent.title,
         slug: existingEvent.slug,
@@ -165,8 +188,9 @@ export default function CreateEventWizard({
         category_id: existingEvent.category_id,
         tags: existingEvent.tags,
         cover_image_url: existingEvent.cover_image_url,
-        start_at: existingEvent.start_at,
-        end_at: existingEvent.end_at,
+        sales_start_at: existingEvent.sales_start_at || '',
+        sales_end_at: existingEvent.sales_end_at || '',
+        occurrences: occs.length > 0 ? occs : [{ ...DEFAULT_OCCURRENCE, id: crypto.randomUUID() }],
         location_type: existingEvent.location_type,
         venue_name: existingEvent.venue_name,
         address_text: existingEvent.address_text,
@@ -244,6 +268,36 @@ export default function CreateEventWizard({
     }));
   };
 
+  const updateOccurrence = (
+    index: number,
+    field: keyof Occurrence,
+    value: string
+  ) => {
+    setForm((f) => {
+      const occs = [...f.occurrences];
+      occs[index] = { ...occs[index], [field]: value };
+      return { ...f, occurrences: occs };
+    });
+  };
+
+  const addOccurrence = () => {
+    setForm((f) => ({
+      ...f,
+      occurrences: [
+        ...f.occurrences,
+        { ...DEFAULT_OCCURRENCE, id: crypto.randomUUID() },
+      ],
+    }));
+  };
+
+  const removeOccurrence = (index: number) => {
+    if (form.occurrences.length <= 1) return;
+    setForm((f) => ({
+      ...f,
+      occurrences: f.occurrences.filter((_, i) => i !== index),
+    }));
+  };
+
   const addTag = () => {
     const tag = tagInput.trim().toLowerCase();
     if (tag && !form.tags.includes(tag)) {
@@ -266,14 +320,26 @@ export default function CreateEventWizard({
       if (!form.slug.trim()) errs.slug = 'Slug is required';
     }
     if (s === 1) {
-      if (!form.start_at) errs.start_at = 'Start date is required';
-      if (!form.end_at) errs.end_at = 'End date is required';
+      if (form.occurrences.length === 0) {
+        errs.occurrences = 'At least one event occurrence is required';
+      }
+      form.occurrences.forEach((occ, i) => {
+        if (!occ.starts_at) errs[`occ_${i}_starts_at`] = 'Start is required';
+        if (!occ.ends_at) errs[`occ_${i}_ends_at`] = 'End is required';
+        if (
+          occ.starts_at &&
+          occ.ends_at &&
+          new Date(occ.ends_at) <= new Date(occ.starts_at)
+        ) {
+          errs[`occ_${i}_ends_at`] = 'End must be after start';
+        }
+      });
       if (
-        form.start_at &&
-        form.end_at &&
-        new Date(form.end_at) <= new Date(form.start_at)
+        form.sales_start_at &&
+        form.sales_end_at &&
+        new Date(form.sales_end_at) <= new Date(form.sales_start_at)
       ) {
-        errs.end_at = 'End must be after start';
+        errs.sales_end_at = 'Sales end must be after sales start';
       }
       if (form.location_type === 'physical' && !form.venue_name.trim()) {
         errs.venue_name = 'Venue name is required for physical events';
@@ -442,6 +508,9 @@ export default function CreateEventWizard({
               form={form}
               errors={errors}
               updateField={updateField}
+              updateOccurrence={updateOccurrence}
+              addOccurrence={addOccurrence}
+              removeOccurrence={removeOccurrence}
             />
           )}
           {step === 2 && (
@@ -525,7 +594,8 @@ function LivePreview({
     return Math.min(...prices);
   }, [form.ticket_tiers]);
 
-  const startDate = form.start_at ? new Date(form.start_at) : null;
+  const firstOcc = form.occurrences.find((o) => o.starts_at);
+  const startDate = firstOcc ? new Date(firstOcc.starts_at) : null;
   const locationLabel =
     form.location_type === 'physical'
       ? 'In-Person'
@@ -906,6 +976,9 @@ function StepDateVenue({
   form,
   errors,
   updateField,
+  updateOccurrence,
+  addOccurrence,
+  removeOccurrence,
 }: {
   form: EventFormData;
   errors: Record<string, string>;
@@ -913,38 +986,130 @@ function StepDateVenue({
     key: K,
     value: EventFormData[K]
   ) => void;
+  updateOccurrence: (index: number, field: keyof Occurrence, value: string) => void;
+  addOccurrence: () => void;
+  removeOccurrence: (index: number) => void;
 }) {
   return (
     <div>
       <SectionHeader
         title="When & Where"
-        description="Set the date, time, and location details for your upcoming event."
+        description="Add one or more event dates, set an optional ticket sales window, and configure the venue."
       />
 
       <div className="space-y-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FormField
-            label="Start Date & Time"
-            error={errors.start_at}
-            required
-          >
-            <Input
-              type="datetime-local"
-              value={form.start_at}
-              onChange={(e) => updateField('start_at', e.target.value)}
-              aria-invalid={!!errors.start_at}
-              className="h-11"
-            />
-          </FormField>
-          <FormField label="End Date & Time" error={errors.end_at} required>
-            <Input
-              type="datetime-local"
-              value={form.end_at}
-              onChange={(e) => updateField('end_at', e.target.value)}
-              aria-invalid={!!errors.end_at}
-              className="h-11"
-            />
-          </FormField>
+        {/* Event Occurrences */}
+        <div>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium text-foreground">
+                Event Dates <span className="ml-0.5 text-primary">*</span>
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When the event actually takes place. Add multiple dates for recurring events.
+              </p>
+            </div>
+            <Button
+              onClick={addOccurrence}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+            >
+              <Plus className="size-3.5" />
+              Add Date
+            </Button>
+          </div>
+          {errors.occurrences && (
+            <p className="text-xs font-medium text-destructive mb-3">{errors.occurrences}</p>
+          )}
+          <div className="space-y-3">
+            {form.occurrences.map((occ, i) => (
+              <div
+                key={occ.id}
+                className="relative rounded-xl border border-border bg-card p-5"
+              >
+                {form.occurrences.length > 1 && (
+                  <Button
+                    onClick={() => removeOccurrence(i)}
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-3 right-3 size-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                )}
+                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-primary">
+                  Date {i + 1}
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <FormField
+                    label="Starts At"
+                    error={errors[`occ_${i}_starts_at`]}
+                    required
+                  >
+                    <Input
+                      type="datetime-local"
+                      value={occ.starts_at}
+                      onChange={(e) => updateOccurrence(i, 'starts_at', e.target.value)}
+                      aria-invalid={!!errors[`occ_${i}_starts_at`]}
+                      className="h-11"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Ends At"
+                    error={errors[`occ_${i}_ends_at`]}
+                    required
+                  >
+                    <Input
+                      type="datetime-local"
+                      value={occ.ends_at}
+                      onChange={(e) => updateOccurrence(i, 'ends_at', e.target.value)}
+                      aria-invalid={!!errors[`occ_${i}_ends_at`]}
+                      className="h-11"
+                    />
+                  </FormField>
+                  <FormField label="Label" hint="e.g. Day 1, Morning Show">
+                    <Input
+                      value={occ.label}
+                      onChange={(e) => updateOccurrence(i, 'label', e.target.value)}
+                      placeholder="Optional label"
+                      className="h-11"
+                    />
+                  </FormField>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sales Window */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <Label className="text-sm font-medium text-foreground mb-1 block">
+            Ticket Sales Window
+          </Label>
+          <p className="text-xs text-muted-foreground mb-4">
+            Optionally set when ticket sales open and close. Leave blank to sell until each occurrence starts.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField label="Sales Open" error={errors.sales_start_at}>
+              <Input
+                type="datetime-local"
+                value={form.sales_start_at}
+                onChange={(e) => updateField('sales_start_at', e.target.value)}
+                className="h-11"
+              />
+            </FormField>
+            <FormField label="Sales Close" error={errors.sales_end_at}>
+              <Input
+                type="datetime-local"
+                value={form.sales_end_at}
+                onChange={(e) => updateField('sales_end_at', e.target.value)}
+                className="h-11"
+              />
+            </FormField>
+          </div>
         </div>
 
         {/* Location Type */}
@@ -1284,21 +1449,41 @@ function StepReview({
           <ReviewRow label="Tags" value={form.tags.join(', ') || 'None'} />
         </ReviewCard>
 
-        <ReviewCard title="Date & Venue" icon={Calendar}>
-          <ReviewRow
-            label="Start"
-            value={
-              form.start_at
-                ? new Date(form.start_at).toLocaleString()
-                : '\u2014'
-            }
-          />
-          <ReviewRow
-            label="End"
-            value={
-              form.end_at ? new Date(form.end_at).toLocaleString() : '\u2014'
-            }
-          />
+        <ReviewCard title="Event Dates" icon={Calendar}>
+          {form.occurrences.map((occ, i) => (
+            <div key={occ.id} className="py-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">
+                  {occ.label || `Date ${i + 1}`}
+                </span>
+                <span className="font-medium text-foreground">
+                  {occ.starts_at ? new Date(occ.starts_at).toLocaleString() : '\u2014'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground text-xs">to</span>
+                <span className="text-xs text-foreground">
+                  {occ.ends_at ? new Date(occ.ends_at).toLocaleString() : '\u2014'}
+                </span>
+              </div>
+            </div>
+          ))}
+          {(form.sales_start_at || form.sales_end_at) && (
+            <>
+              <Separator className="my-2" />
+              <ReviewRow
+                label="Sales Open"
+                value={form.sales_start_at ? new Date(form.sales_start_at).toLocaleString() : '\u2014'}
+              />
+              <ReviewRow
+                label="Sales Close"
+                value={form.sales_end_at ? new Date(form.sales_end_at).toLocaleString() : '\u2014'}
+              />
+            </>
+          )}
+        </ReviewCard>
+
+        <ReviewCard title="Venue" icon={MapPin}>
           <ReviewRow label="Type" value={form.location_type} />
           {form.venue_name && (
             <ReviewRow label="Venue" value={form.venue_name} />

@@ -24,7 +24,7 @@ export default async function EventDetailPage({ params }: PageProps) {
   const { data: event } = await supabase
     .from('events')
     .select(`
-      id, title, slug, status, start_at, end_at,
+      id, title, slug, status,
       venue_name, city, location_type,
       total_capacity, total_tickets_sold,
       cover_image_url, currency, organizer_id
@@ -35,6 +35,13 @@ export default async function EventDetailPage({ params }: PageProps) {
   if (!event || event.organizer_id !== effectiveOrgId) {
     redirect('/dashboard/events');
   }
+
+  // Fetch occurrences for this event
+  const { data: occurrences } = await supabase
+    .from('event_occurrences')
+    .select('id, starts_at, ends_at, label, is_cancelled')
+    .eq('event_id', eventId)
+    .order('starts_at', { ascending: true });
 
   // Fetch ticket tiers for this event
   const { data: tiers } = await supabase
@@ -82,7 +89,8 @@ export default async function EventDetailPage({ params }: PageProps) {
     remaining: t.remaining_quantity,
   }));
 
-  const startDate = event.start_at ? new Date(event.start_at) : null;
+  const firstOcc = occurrences?.[0];
+  const startDate = firstOcc ? new Date(firstOcc.starts_at) : null;
   const venue = [event.venue_name, event.city].filter(Boolean).join(', ');
 
   const statusColors: Record<string, string> = {

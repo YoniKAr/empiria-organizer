@@ -21,6 +21,12 @@ interface TicketTierInput {
   is_hidden: boolean;
 }
 
+interface OccurrenceInput {
+  starts_at: string;
+  ends_at: string;
+  label: string;
+}
+
 interface EventFormInput {
   title: string;
   slug: string;
@@ -28,8 +34,9 @@ interface EventFormInput {
   category_id: string;
   tags: string[];
   cover_image_url: string;
-  start_at: string;
-  end_at: string;
+  sales_start_at: string;
+  sales_end_at: string;
+  occurrences: OccurrenceInput[];
   location_type: string;
   venue_name: string;
   address_text: string;
@@ -105,8 +112,8 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
       category_id: form.category_id || null,
       tags: form.tags || [],
       cover_image_url: form.cover_image_url || null,
-      start_at: form.start_at,
-      end_at: form.end_at,
+      sales_start_at: form.sales_start_at || null,
+      sales_end_at: form.sales_end_at || null,
       location_type: form.location_type || 'physical',
       venue_name: form.venue_name || null,
       address_text: form.address_text || null,
@@ -122,6 +129,26 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
   if (eventError) {
     console.error('Event insert error:', eventError);
     return { success: false, error: eventError.message };
+  }
+
+  // Create event occurrences
+  if (form.occurrences.length > 0) {
+    const { error: occError } = await supabase
+      .from('event_occurrences')
+      .insert(
+        form.occurrences.map((o) => ({
+          event_id: event.id,
+          starts_at: o.starts_at,
+          ends_at: o.ends_at,
+          label: o.label || null,
+        }))
+      );
+
+    if (occError) {
+      console.error('Occurrence insert error:', occError);
+      await supabase.from('events').delete().eq('id', event.id);
+      return { success: false, error: occError.message };
+    }
   }
 
   // Create ticket tiers
@@ -172,8 +199,8 @@ export async function updateEvent(
       category_id: form.category_id || null,
       tags: form.tags || [],
       cover_image_url: form.cover_image_url || null,
-      start_at: form.start_at,
-      end_at: form.end_at,
+      sales_start_at: form.sales_start_at || null,
+      sales_end_at: form.sales_end_at || null,
       location_type: form.location_type || 'physical',
       venue_name: form.venue_name || null,
       address_text: form.address_text || null,
@@ -184,6 +211,24 @@ export async function updateEvent(
     .eq('id', eventId);
 
   if (updateError) return { success: false, error: updateError.message };
+
+  // Replace occurrences
+  if (form.occurrences.length > 0) {
+    await supabase.from('event_occurrences').delete().eq('event_id', eventId);
+
+    const { error: occError } = await supabase
+      .from('event_occurrences')
+      .insert(
+        form.occurrences.map((o) => ({
+          event_id: eventId,
+          starts_at: o.starts_at,
+          ends_at: o.ends_at,
+          label: o.label || null,
+        }))
+      );
+
+    if (occError) return { success: false, error: occError.message };
+  }
 
   // Replace ticket tiers
   if (form.ticket_tiers.length > 0) {
@@ -208,7 +253,7 @@ export async function publishEvent(eventId: string): Promise<ActionResult<{ id: 
 
   const { data: event } = await supabase
     .from('events')
-    .select('id, organizer_id, status, title, start_at, end_at')
+    .select('id, organizer_id, status, title')
     .eq('id', eventId)
     .single();
 
@@ -220,8 +265,18 @@ export async function publishEvent(eventId: string): Promise<ActionResult<{ id: 
     return { success: false, error: `Cannot publish event with status "${event.status}"` };
   }
 
-  if (!event.title || !event.start_at || !event.end_at) {
-    return { success: false, error: 'Event must have a title, start date, and end date' };
+  if (!event.title) {
+    return { success: false, error: 'Event must have a title' };
+  }
+
+  // Require at least one occurrence
+  const { count: occCount } = await supabase
+    .from('event_occurrences')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId);
+
+  if (!occCount || occCount === 0) {
+    return { success: false, error: 'Event must have at least one event date' };
   }
 
   const { count } = await supabase
@@ -318,13 +373,24 @@ export async function deleteEvent(
 
   const { data: event } = await supabase
     .from('events')
-    .select('id, organizer_id, status, title, start_at, venue_name, city, total_tickets_sold')
+    .select('id, organizer_id, status, title, venue_name, city, total_tickets_sold')
     .eq('id', eventId)
     .single();
 
   if (!event || event.organizer_id !== effectiveOrgId) {
     return { success: false, error: 'Not found' };
   }
+
+  // Fetch first occurrence for email date
+  const { data: firstOcc } = await supabase
+    .from('event_occurrences')
+    .select('starts_at')
+    .eq('event_id', eventId)
+    .order('starts_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const eventDateForEmail = firstOcc?.starts_at || '';
 
   // Check if any tickets were ever issued (including cancelled/refunded/used)
   const { count: ticketCount } = await supabase
@@ -477,7 +543,7 @@ export async function deleteEvent(
           to: email,
           attendeeName: name,
           eventTitle: event.title,
-          eventDate: event.start_at,
+          eventDate: eventDateForEmail,
           venueName: event.venue_name || '',
           city: event.city || '',
           tierName: tierNames.join(', '),
@@ -620,13 +686,22 @@ export async function cancelTicketWithRefund(
   // Verify organizer owns this event
   const { data: event } = await supabase
     .from('events')
-    .select('id, organizer_id, title, start_at, venue_name, city')
+    .select('id, organizer_id, title, venue_name, city')
     .eq('id', ticket.event_id)
     .single();
 
   if (!event || event.organizer_id !== effectiveOrgId) {
     return { success: false, error: 'Not authorized to cancel this ticket' };
   }
+
+  // Fetch first occurrence for email date
+  const { data: cancelOcc } = await supabase
+    .from('event_occurrences')
+    .select('starts_at')
+    .eq('event_id', ticket.event_id)
+    .order('starts_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   // Fetch order for payment intent
   const { data: order } = await supabase
@@ -715,7 +790,7 @@ export async function cancelTicketWithRefund(
       to: ticket.attendee_email,
       attendeeName: ticket.attendee_name,
       eventTitle: event.title,
-      eventDate: event.start_at,
+      eventDate: cancelOcc?.starts_at || '',
       venueName: event.venue_name || '',
       city: event.city || '',
       tierName: tier.name,
@@ -759,13 +834,22 @@ export async function cancelOrderWithRefund(
   // Verify organizer owns the event
   const { data: event } = await supabase
     .from('events')
-    .select('id, organizer_id, title, start_at, venue_name, city')
+    .select('id, organizer_id, title, venue_name, city')
     .eq('id', order.event_id)
     .single();
 
   if (!event || event.organizer_id !== effectiveOrgId) {
     return { success: false, error: 'Not authorized' };
   }
+
+  // Fetch first occurrence for email date
+  const { data: orderOcc } = await supabase
+    .from('event_occurrences')
+    .select('starts_at')
+    .eq('event_id', order.event_id)
+    .order('starts_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   // Fetch valid tickets for this order
   let query = supabase
@@ -898,7 +982,7 @@ export async function cancelOrderWithRefund(
         to: email,
         attendeeName: name,
         eventTitle: event.title,
-        eventDate: event.start_at,
+        eventDate: orderOcc?.starts_at || '',
         venueName: event.venue_name || '',
         city: event.city || '',
         tierName: tierNames.join(', '),
@@ -1166,7 +1250,7 @@ export async function sendTicketsToEmail(input: {
   const eventIds = [...new Set(validTickets.map((t) => t.event_id))];
   const { data: events } = await supabase
     .from('events')
-    .select('id, organizer_id, title, start_at, end_at, venue_name, city, currency')
+    .select('id, organizer_id, title, venue_name, city, currency')
     .in('id', eventIds);
 
   if (!events || events.length === 0) {
@@ -1189,6 +1273,16 @@ export async function sendTicketsToEmail(input: {
 
   // Build ticket info for email
   const event = events[0]; // All tickets should be for the same event
+
+  // Fetch first occurrence for email
+  const { data: emailOcc } = await supabase
+    .from('event_occurrences')
+    .select('starts_at, ends_at')
+    .eq('event_id', event.id)
+    .order('starts_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
   const ticketInfos = validTickets.map((t) => ({
     id: t.id,
     qr_code_secret: t.qr_code_secret,
@@ -1201,8 +1295,8 @@ export async function sendTicketsToEmail(input: {
       attendeeName: input.recipientName,
       tickets: ticketInfos,
       eventTitle: event.title,
-      eventDate: event.start_at,
-      eventEndDate: event.end_at || undefined,
+      eventDate: emailOcc?.starts_at || '',
+      eventEndDate: emailOcc?.ends_at || undefined,
       venueName: event.venue_name || '',
       city: event.city || '',
       currency: event.currency || 'cad',

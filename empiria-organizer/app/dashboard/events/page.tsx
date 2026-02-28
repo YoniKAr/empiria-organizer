@@ -16,11 +16,12 @@ export default async function EventsList() {
   const { data: events } = await supabase
     .from('events')
     .select(`
-      id, title, slug, status, start_at, end_at,
+      id, title, slug, status,
       venue_name, city, location_type,
       total_capacity, total_tickets_sold,
       cover_image_url, currency, created_at,
-      ticket_tiers(id, name, price, initial_quantity, remaining_quantity)
+      ticket_tiers(id, name, price, initial_quantity, remaining_quantity),
+      event_occurrences(starts_at)
     `)
     .eq('organizer_id', effectiveOrgId)
     .is('deleted_at', null)
@@ -85,8 +86,6 @@ interface EventWithTiers {
   title: string;
   slug: string;
   status: string;
-  start_at: string;
-  end_at: string;
   venue_name: string | null;
   city: string | null;
   location_type: string;
@@ -102,6 +101,7 @@ interface EventWithTiers {
     initial_quantity: number;
     remaining_quantity: number;
   }[];
+  event_occurrences: { starts_at: string }[];
 }
 
 function EventSection({
@@ -128,7 +128,10 @@ function EventSection({
 }
 
 function EventCard({ event }: { event: EventWithTiers }) {
-  const startDate = event.start_at ? new Date(event.start_at) : null;
+  const nextOcc = event.event_occurrences
+    ?.sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+    ?.[0];
+  const startDate = nextOcc ? new Date(nextOcc.starts_at) : null;
   const soldPercent =
     event.total_capacity > 0
       ? Math.round((event.total_tickets_sold / event.total_capacity) * 100)
