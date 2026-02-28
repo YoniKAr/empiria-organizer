@@ -1044,7 +1044,8 @@ export async function updateUserAvatar(
 
   const supabase = getSupabaseAdmin();
   const ext = file.name.split('.').pop() ?? 'jpg';
-  const path = `${user.sub}/avatar.${ext}`;
+  const safeSub = user.sub.replace(/\|/g, '_');
+  const path = `${safeSub}/avatar.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from('avatars')
