@@ -1024,6 +1024,47 @@ export async function updateUserName(
   return { success: true, data: { full_name } };
 }
 
+export async function updateUserAvatar(
+  formData: FormData
+): Promise<ActionResult<{ avatar_url: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const file = formData.get('avatar') as File | null;
+  if (!file || file.size === 0) return { success: false, error: 'No file provided' };
+
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowed.includes(file.type)) {
+    return { success: false, error: 'File must be a JPEG, PNG, WebP, or GIF image' };
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    return { success: false, error: 'File must be under 5 MB' };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const ext = file.name.split('.').pop() ?? 'jpg';
+  const path = `${user.sub}/avatar.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('avatars')
+    .upload(path, file, { upsert: true, contentType: file.type });
+
+  if (uploadError) return { success: false, error: uploadError.message };
+
+  const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path);
+  const avatar_url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+  const { error: dbError } = await supabase
+    .from('users')
+    .update({ avatar_url })
+    .eq('auth0_id', user.sub);
+
+  if (dbError) return { success: false, error: dbError.message };
+
+  return { success: true, data: { avatar_url } };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MANUAL TICKET ISSUANCE
 // ═══════════════════════════════════════════════════════════════════════════

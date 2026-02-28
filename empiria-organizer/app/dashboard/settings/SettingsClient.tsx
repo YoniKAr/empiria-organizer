@@ -1,18 +1,21 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { updateUserName } from '@/lib/actions';
+import { useState, useTransition, useRef } from 'react';
+import { updateUserName, updateUserAvatar } from '@/lib/actions';
+import Image from 'next/image';
 
 export default function SettingsClient({
     email,
     isGoogleUser,
     defaultFirstName,
     defaultLastName,
+    defaultAvatarUrl,
 }: {
     email: string;
     isGoogleUser: boolean;
     defaultFirstName: string;
     defaultLastName: string;
+    defaultAvatarUrl: string | null;
 }) {
     const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
 
@@ -42,6 +45,7 @@ export default function SettingsClient({
                     email={email}
                     defaultFirstName={defaultFirstName}
                     defaultLastName={defaultLastName}
+                    defaultAvatarUrl={defaultAvatarUrl}
                 />
             )}
             {activeTab === 'security' && <SecuritySection isGoogleUser={isGoogleUser} />}
@@ -55,30 +59,64 @@ function ProfileSection({
     email,
     defaultFirstName,
     defaultLastName,
+    defaultAvatarUrl,
 }: {
     email: string;
     defaultFirstName: string;
     defaultLastName: string;
+    defaultAvatarUrl: string | null;
 }) {
     const [firstName, setFirstName] = useState(defaultFirstName);
     const [lastName, setLastName] = useState(defaultLastName);
-    const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-    const [errorMsg, setErrorMsg] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(defaultAvatarUrl);
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [saveError, setSaveError] = useState('');
+    const [avatarStatus, setAvatarStatus] = useState<'idle' | 'uploading' | 'error'>('idle');
+    const [avatarError, setAvatarError] = useState('');
     const [isPending, startTransition] = useTransition();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleSave = () => {
         startTransition(async () => {
-            setStatus('saving');
-            setErrorMsg('');
+            setSaveStatus('saving');
+            setSaveError('');
             const result = await updateUserName(firstName, lastName);
             if (result.success) {
-                setStatus('saved');
-                setTimeout(() => setStatus('idle'), 2500);
+                setSaveStatus('saved');
+                setTimeout(() => setSaveStatus('idle'), 2500);
             } else {
-                setStatus('error');
-                setErrorMsg(result.error);
+                setSaveStatus('error');
+                setSaveError(result.error);
             }
         });
+    };
+
+    const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setAvatarStatus('uploading');
+        setAvatarError('');
+
+        const fd = new FormData();
+        fd.append('avatar', file);
+
+        const result = await updateUserAvatar(fd);
+        if (result.success) {
+            setAvatarUrl(result.data.avatar_url);
+            setAvatarStatus('idle');
+        } else {
+            setAvatarStatus('error');
+            setAvatarError(result.error);
+        }
+
+        // Reset input so the same file can be re-selected
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handleRemoveAvatar = () => {
+        // Just clear locally; you can add a removeUserAvatar action if needed
+        setAvatarUrl(null);
     };
 
     return (
@@ -96,18 +134,57 @@ function ProfileSection({
 
                 {/* Avatar */}
                 <div className="flex items-center gap-4 mt-6 mb-8">
-                    <div className="w-16 h-16 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
-                        <div className="w-full h-full flex items-center justify-center text-2xl text-gray-400">
-                            👤
-                        </div>
+                    <div className="w-16 h-16 rounded-full bg-gray-200 overflow-hidden flex-shrink-0 relative">
+                        {avatarUrl ? (
+                            <Image
+                                src={avatarUrl}
+                                alt="Profile photo"
+                                fill
+                                className="object-cover"
+                                unoptimized
+                            />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-2xl text-gray-400">
+                                👤
+                            </div>
+                        )}
+                        {avatarStatus === 'uploading' && (
+                            <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                                <span className="text-xs text-gray-500">…</span>
+                            </div>
+                        )}
                     </div>
                     <div>
                         <p className="text-sm font-semibold text-gray-800">Profile Photo</p>
                         <div className="flex items-center gap-3 mt-1">
-                            <button className="text-sm font-medium text-[#F98C1F] hover:underline">Update</button>
-                            <button className="text-sm text-gray-500 hover:text-gray-700">Remove</button>
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={avatarStatus === 'uploading'}
+                                className="text-sm font-medium text-[#F98C1F] hover:underline disabled:opacity-50"
+                            >
+                                {avatarStatus === 'uploading' ? 'Uploading…' : 'Update'}
+                            </button>
+                            {avatarUrl && (
+                                <button
+                                    onClick={handleRemoveAvatar}
+                                    className="text-sm text-gray-500 hover:text-gray-700"
+                                >
+                                    Remove
+                                </button>
+                            )}
                         </div>
+                        {avatarError && (
+                            <p className="text-xs text-red-500 mt-1">{avatarError}</p>
+                        )}
                     </div>
+                    {/* Hidden file input */}
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        onChange={handleAvatarChange}
+                    />
                 </div>
 
                 {/* Fields */}
@@ -140,7 +217,7 @@ function ProfileSection({
                         </div>
                     </div>
 
-                    {/* Email — read-only, prefilled from session */}
+                    {/* Email — read-only */}
                     <div>
                         <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-2">
                             EMAIL ADDRESS
@@ -154,12 +231,12 @@ function ProfileSection({
                     </div>
                 </div>
 
-                {errorMsg && (
-                    <p className="mt-4 text-sm text-red-500">{errorMsg}</p>
+                {saveError && (
+                    <p className="mt-4 text-sm text-red-500">{saveError}</p>
                 )}
 
                 <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-end gap-3">
-                    {status === 'saved' && (
+                    {saveStatus === 'saved' && (
                         <span className="text-sm text-green-600 font-medium">✓ Changes saved</span>
                     )}
                     <button
