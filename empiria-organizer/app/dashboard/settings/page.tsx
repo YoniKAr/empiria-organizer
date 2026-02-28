@@ -7,6 +7,7 @@ export default async function SettingsPage() {
   if (!session?.user) redirect('/auth/login?returnTo=/dashboard/settings');
 
   const email = session.user.email ?? '';
+  const isGoogleUser = typeof session.user.sub === 'string' && session.user.sub.startsWith('google-oauth2|');
 
-  return <SettingsClient email={email} />;
+  return <SettingsClient email={email} isGoogleUser={isGoogleUser} />;
 }

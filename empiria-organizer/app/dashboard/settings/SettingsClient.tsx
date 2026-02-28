@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export default function SettingsClient({ email }: { email: string }) {
+export default function SettingsClient({ email, isGoogleUser }: { email: string; isGoogleUser: boolean }) {
     const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
 
     return (
@@ -14,8 +14,8 @@ export default function SettingsClient({ email }: { email: string }) {
                         key={tab}
                         onClick={() => setActiveTab(tab)}
                         className={`relative px-1 pb-3 mr-8 text-sm font-medium capitalize transition-colors ${activeTab === tab
-                                ? 'text-[#F98C1F]'
-                                : 'text-gray-500 hover:text-gray-700'
+                            ? 'text-[#F98C1F]'
+                            : 'text-gray-500 hover:text-gray-700'
                             }`}
                     >
                         {tab === 'profile' ? 'Profile Details' : 'Security'}
@@ -27,7 +27,7 @@ export default function SettingsClient({ email }: { email: string }) {
             </div>
 
             {activeTab === 'profile' && <ProfileSection email={email} />}
-            {activeTab === 'security' && <SecuritySection />}
+            {activeTab === 'security' && <SecuritySection isGoogleUser={isGoogleUser} />}
         </div>
     );
 }
@@ -98,24 +98,35 @@ function ProfileSection({ email }: { email: string }) {
 
 // ─── Security Section ─────────────────────────────────────────────────────────
 
-function SecuritySection() {
+function SecuritySection({ isGoogleUser }: { isGoogleUser: boolean }) {
     return (
         <div className="space-y-10">
             <section>
                 <h2 className="text-xl font-bold text-gray-900">Security</h2>
                 <p className="text-sm text-gray-500 mt-0.5 mb-8">Manage your password and security settings.</p>
 
-                <div className="space-y-6">
-                    <FieldRow label="CURRENT PASSWORD" type="password" placeholder="••••••••••••" />
-                    <FieldRow label="NEW PASSWORD" type="password" placeholder="New password" />
-                    <FieldRow label="CONFIRM NEW PASSWORD" type="password" placeholder="Confirm new password" />
-                </div>
+                {isGoogleUser ? (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-5">
+                        <p className="text-sm font-medium text-gray-700">Password change not available</p>
+                        <p className="text-sm text-gray-500 mt-1">
+                            Your account uses Google Sign-In. Password management is handled through your Google account.
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="space-y-6">
+                            <FieldRow label="CURRENT PASSWORD" type="password" placeholder="••••••••••••" />
+                            <FieldRow label="NEW PASSWORD" type="password" placeholder="New password" />
+                            <FieldRow label="CONFIRM NEW PASSWORD" type="password" placeholder="Confirm new password" />
+                        </div>
 
-                <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
-                    <button className="bg-[#F98C1F] text-white text-sm font-medium px-5 py-2 rounded-lg hover:bg-[#e07b10] transition-colors">
-                        Update Password
-                    </button>
-                </div>
+                        <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
+                            <button className="bg-[#F98C1F] text-white text-sm font-medium px-5 py-2 rounded-lg hover:bg-[#e07b10] transition-colors">
+                                Update Password
+                            </button>
+                        </div>
+                    </>
+                )}
             </section>
         </div>
     );
