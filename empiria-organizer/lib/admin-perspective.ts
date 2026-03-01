@@ -76,8 +76,9 @@ export async function getPerspectiveContext(): Promise<PerspectiveContext> {
       };
     }
 
-    // Cookie references invalid/deleted organizer — clear it
-    cookieStore.delete(PERSPECTIVE_COOKIE);
+    // Cookie references invalid/deleted organizer — ignore it
+    // (Cannot delete cookies during render; stale cookie is harmless
+    //  since it fails the DB lookup above every time)
   }
 
   // Default: user is acting as themselves
