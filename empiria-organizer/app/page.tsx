@@ -24,9 +24,10 @@ export default async function OrganizerRoot() {
     .single();
 
   // 4. Security Check: Are they allowed in?
-  // If they are an "attendee", they are NOT allowed in the dashboard.
-  if (!profile || (profile.role !== 'organizer' && profile.role !== 'non_profit')) {
-    redirect('/unauthorized'); // Send them to the "Wrong Door" page
+  // Organizers, non-profits, and admins (admin perspective mode) are allowed.
+  const allowedRoles = ['organizer', 'non_profit', 'admin'];
+  if (!profile || !allowedRoles.includes(profile.role)) {
+    redirect('/unauthorized');
   }
 
   // 5. Authorized -> Enter the Dashboard
