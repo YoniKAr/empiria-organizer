@@ -39,7 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/select'; //
-
+//
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface TicketTier {
   id: string;
