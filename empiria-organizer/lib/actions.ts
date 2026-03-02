@@ -31,6 +31,7 @@ interface EventFormInput {
   title: string;
   slug: string;
   description: string;
+  what_to_expect: string[];
   category_id: string;
   tags: string[];
   cover_image_url: string;
@@ -109,6 +110,7 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
       title: form.title,
       slug: form.slug,
       description: form.description ? JSON.stringify({ text: form.description }) : null,
+      what_to_expect: form.what_to_expect ? form.what_to_expect.filter(p => p.trim() !== '') : [],
       category_id: form.category_id || null,
       tags: form.tags || [],
       cover_image_url: form.cover_image_url || null,
@@ -196,6 +198,7 @@ export async function updateEvent(
       title: form.title,
       slug: form.slug,
       description: form.description ? JSON.stringify({ text: form.description }) : null,
+      what_to_expect: form.what_to_expect ? form.what_to_expect.filter(p => p.trim() !== '') : [],
       category_id: form.category_id || null,
       tags: form.tags || [],
       cover_image_url: form.cover_image_url || null,

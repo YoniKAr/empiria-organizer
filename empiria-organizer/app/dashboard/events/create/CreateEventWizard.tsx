@@ -39,7 +39,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/select'; //
-//
+import { createEvent, updateEvent, publishEvent } from '@/lib/actions';
+import { useRouter } from 'next/navigation';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface TicketTier {
   id: string;
@@ -176,6 +178,7 @@ export default function CreateEventWizard({
   categories: Category[];
   existingEvent?: ExistingEvent;
 }) {
+  const router = useRouter();
   const isEditing = !!existingEvent;
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<EventFormData>(() => {
@@ -370,32 +373,83 @@ export default function CreateEventWizard({
   };
   const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
+  const getSanitizedForm = () => {
+    return {
+      title: form.title,
+      slug: form.slug,
+      description: form.description,
+      what_to_expect: form.what_to_expect.filter((p) => p.trim() !== ''),
+      category_id: form.category_id,
+      tags: form.tags,
+      cover_image_url: form.cover_image_url,
+      sales_start_at: form.sales_start_at,
+      sales_end_at: form.sales_end_at,
+      occurrences: form.occurrences,
+      location_type: form.location_type,
+      venue_name: form.venue_name,
+      address_text: form.address_text,
+      city: form.city,
+      zip_code: form.zip_code,
+      currency: form.currency,
+      ticket_tiers: form.ticket_tiers,
+    };
+  };
+
   const saveDraft = async () => {
     setSaving(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      if (!savedEventId) setSavedEventId(crypto.randomUUID());
+      if (savedEventId || isEditing) {
+        const idToUpdate = savedEventId || existingEvent?.id;
+        if (idToUpdate) {
+          const res = await updateEvent(idToUpdate, getSanitizedForm());
+          if (!res.success) throw new Error(res.error);
+        }
+      } else {
+        const res = await createEvent(getSanitizedForm());
+        if (!res.success) throw new Error(res.error);
+        setSavedEventId(res.data.id);
+      }
+
       setToast({
-        message: isEditing
-          ? 'Changes saved successfully'
-          : 'Draft saved successfully',
+        message: isEditing || savedEventId ? 'Changes saved successfully' : 'Draft saved successfully',
         type: 'success',
       });
-    } catch {
-      setToast({ message: 'Save failed', type: 'error' });
+    } catch (err: any) {
+      setToast({ message: err.message || 'Save failed', type: 'error' });
     } finally {
       setSaving(false);
     }
   };
 
   const handlePublish = async () => {
-    if (!savedEventId) await saveDraft();
     setPublishing(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      let idToPublish = savedEventId || existingEvent?.id;
+
+      // Save changes first if no existing ID, or just to be safe it's up to date
+      if (!idToPublish) {
+        const res = await createEvent(getSanitizedForm());
+        if (!res.success) throw new Error(res.error);
+        idToPublish = res.data.id;
+        setSavedEventId(idToPublish);
+      } else {
+        const res = await updateEvent(idToPublish, getSanitizedForm());
+        if (!res.success) throw new Error(res.error);
+      }
+
+      // Now publish
+      const pubRes = await publishEvent(idToPublish);
+      if (!pubRes.success) throw new Error(pubRes.error);
+
       setToast({ message: 'Event published!', type: 'success' });
-    } catch {
-      setToast({ message: 'Publish failed', type: 'error' });
+
+      // Redirect back to events list
+      setTimeout(() => {
+        router.push('/dashboard/events');
+      }, 1500);
+
+    } catch (err: any) {
+      setToast({ message: err.message || 'Publish failed', type: 'error' });
     } finally {
       setPublishing(false);
     }
