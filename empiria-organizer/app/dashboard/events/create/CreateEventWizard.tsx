@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -65,9 +65,11 @@ interface EventFormData {
   title: string;
   slug: string;
   description: string;
+  what_to_expect: string[];
   category_id: string;
   tags: string[];
   cover_image_url: string;
+  photo_urls: string[];
   sales_start_at: string;
   sales_end_at: string;
   occurrences: Occurrence[];
@@ -91,6 +93,7 @@ interface ExistingEvent {
   title: string;
   slug: string;
   description: string;
+  what_to_expect: string[];
   category_id: string;
   tags: string[];
   cover_image_url: string;
@@ -138,9 +141,11 @@ const INITIAL_FORM: EventFormData = {
   title: '',
   slug: '',
   description: '',
+  what_to_expect: [''],
   category_id: '',
   tags: [],
   cover_image_url: '',
+  photo_urls: [],
   sales_start_at: '',
   sales_end_at: '',
   occurrences: [{ ...DEFAULT_OCCURRENCE }],
@@ -185,9 +190,11 @@ export default function CreateEventWizard({
         title: existingEvent.title,
         slug: existingEvent.slug,
         description: existingEvent.description,
+        what_to_expect: existingEvent.what_to_expect?.length > 0 ? existingEvent.what_to_expect : [''],
         category_id: existingEvent.category_id,
         tags: existingEvent.tags,
         cover_image_url: existingEvent.cover_image_url,
+        photo_urls: [],
         sales_start_at: existingEvent.sales_start_at || '',
         sales_end_at: existingEvent.sales_end_at || '',
         occurrences: occs.length > 0 ? occs : [{ ...DEFAULT_OCCURRENCE, id: crypto.randomUUID() }],
@@ -318,6 +325,8 @@ export default function CreateEventWizard({
     if (s === 0) {
       if (!form.title.trim()) errs.title = 'Event title is required';
       if (!form.slug.trim()) errs.slug = 'Slug is required';
+      if (form.what_to_expect.every((item) => !item.trim()))
+        errs.what_to_expect = 'At least one "What to Expect" bullet is required';
     }
     if (s === 1) {
       if (form.occurrences.length === 0) {
@@ -874,7 +883,7 @@ function StepBasics({
           </div>
         </FormField>
 
-        <FormField label="Description">
+        <FormField label="Description" required>
           <Textarea
             value={form.description}
             onChange={(e) => updateField('description', e.target.value)}
@@ -882,6 +891,54 @@ function StepBasics({
             placeholder="Tell attendees what to expect, what they'll learn, who should come..."
             className="resize-none"
           />
+        </FormField>
+
+        <FormField
+          label="What to Expect"
+          required
+          hint="Add bullet points describing what attendees will experience"
+          error={errors.what_to_expect}
+        >
+          <div className="space-y-2">
+            {form.what_to_expect.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+                  •
+                </span>
+                <Input
+                  value={item}
+                  onChange={(e) => {
+                    const updated = [...form.what_to_expect];
+                    updated[idx] = e.target.value;
+                    updateField('what_to_expect', updated);
+                  }}
+                  placeholder={`Bullet point ${idx + 1}`}
+                  className="h-10 flex-1"
+                />
+                {form.what_to_expect.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = form.what_to_expect.filter((_, i) => i !== idx);
+                      updateField('what_to_expect', updated);
+                    }}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Remove bullet"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => updateField('what_to_expect', [...form.what_to_expect, ''])}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            >
+              <Plus className="size-3.5" />
+              Add bullet point
+            </button>
+          </div>
         </FormField>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -1368,53 +1425,159 @@ function StepMedia({
     value: EventFormData[K]
   ) => void;
 }) {
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoFiles = (files: FileList | null) => {
+    if (!files) return;
+    const newUrls = Array.from(files).map((f) => URL.createObjectURL(f));
+    updateField('photo_urls', [...form.photo_urls, ...newUrls]);
+  };
+
+  const removePhoto = (idx: number) => {
+    // Revoke the object URL to free memory
+    URL.revokeObjectURL(form.photo_urls[idx]);
+    updateField('photo_urls', form.photo_urls.filter((_, i) => i !== idx));
+  };
+
   return (
     <div>
       <SectionHeader
         title="Event Media"
-        description="Add a cover image to make your event stand out in listings."
+        description="Add a cover image and upload photos to showcase your event."
       />
 
-      <div className="space-y-6">
-        <FormField
-          label="Cover Image URL"
-          hint="Paste a direct image URL. Recommended size: 1200 x 630px."
-        >
-          <Input
-            value={form.cover_image_url}
-            onChange={(e) => updateField('cover_image_url', e.target.value)}
-            placeholder="https://example.com/my-event-banner.jpg"
-            className="h-11"
-          />
-        </FormField>
-
-        {form.cover_image_url ? (
-          <div className="overflow-hidden rounded-xl border border-border">
-            <img
-              src={form.cover_image_url}
-              alt="Cover preview"
-              className="h-56 w-full object-cover"
-              crossOrigin="anonymous"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
+      <div className="space-y-8">
+        {/* Cover Image */}
+        <div className="space-y-4">
+          <p className="text-sm font-semibold text-foreground">Cover Image</p>
+          <FormField
+            label="Cover Image URL"
+            hint="Paste a direct image URL. Recommended size: 1200 x 630px."
+          >
+            <Input
+              value={form.cover_image_url}
+              onChange={(e) => updateField('cover_image_url', e.target.value)}
+              placeholder="https://example.com/my-event-banner.jpg"
+              className="h-11"
             />
-          </div>
-        ) : (
-          <div className="flex h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/50">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary">
-              <Upload className="size-6 text-muted-foreground" />
+          </FormField>
+
+          {form.cover_image_url ? (
+            <div className="overflow-hidden rounded-xl border border-border">
+              <img
+                src={form.cover_image_url}
+                alt="Cover preview"
+                className="h-56 w-full object-cover"
+                crossOrigin="anonymous"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
             </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-foreground">
-                No image yet
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Paste a URL above to preview your cover image
+          ) : (
+            <div className="flex h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/50">
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary">
+                <Upload className="size-6 text-muted-foreground" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground">No image yet</p>
+                <p className="text-xs text-muted-foreground">
+                  Paste a URL above to preview your cover image
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Divider */}
+        <Separator />
+
+        {/* Photo Gallery Upload */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Photo Gallery</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Upload photos that will appear in your event page gallery.
               </p>
             </div>
+            {form.photo_urls.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => photoInputRef.current?.click()}
+              >
+                <Plus className="size-3.5" />
+                Add More
+              </Button>
+            )}
           </div>
-        )}
+
+          {/* Hidden file input */}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => handlePhotoFiles(e.target.files)}
+          />
+
+          {form.photo_urls.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              className="flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/50 py-12 transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary">
+                <ImageIcon className="size-6 text-muted-foreground" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground">Upload photos</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Click to browse — JPG, PNG, WebP supported
+                </p>
+              </div>
+            </button>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {form.photo_urls.map((url, idx) => (
+                <div
+                  key={url}
+                  className="group relative aspect-square overflow-hidden rounded-xl border border-border bg-muted"
+                >
+                  <img
+                    src={url}
+                    alt={`Photo ${idx + 1}`}
+                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(idx)}
+                    className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-full bg-foreground/70 text-background opacity-0 shadow transition-opacity group-hover:opacity-100"
+                    aria-label="Remove photo"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                  <div className="absolute bottom-1.5 left-1.5 rounded-md bg-foreground/60 px-1.5 py-0.5 text-[10px] font-medium text-background">
+                    {idx + 1}
+                  </div>
+                </div>
+              ))}
+              {/* Add more tile */}
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/50 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+              >
+                <Plus className="size-5" />
+                <span className="text-xs font-medium">Add</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
