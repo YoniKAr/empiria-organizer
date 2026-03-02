@@ -47,7 +47,7 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
     const { data: event } = await supabase
       .from('events')
       .select(`
-        id, title, slug, description, category_id, tags,
+        id, title, slug, description, what_to_expect, category_id, tags,
         cover_image_url, sales_start_at, sales_end_at, location_type,
         venue_name, address_text, city, currency, status, organizer_id
       `)
@@ -91,6 +91,7 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
       title: event.title,
       slug: event.slug,
       description: descriptionText,
+      what_to_expect: event.what_to_expect || [''],
       category_id: event.category_id || '',
       tags: event.tags || [],
       cover_image_url: event.cover_image_url || '',
