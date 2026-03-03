@@ -353,8 +353,11 @@ export default function CreateEventWizard({
       ) {
         errs.sales_end_at = 'Sales end must be after sales start';
       }
-      if (form.location_type === 'physical' && !form.venue_name.trim()) {
-        errs.venue_name = 'Venue name is required for physical events';
+      if (['physical', 'hybrid'].includes(form.location_type)) {
+        if (!form.venue_name.trim()) errs.venue_name = 'Venue name is required';
+        if (!form.address_text.trim()) errs.address_text = 'Full address is required';
+        if (!form.city.trim()) errs.city = 'City is required';
+        if (!form.zip_code.trim()) errs.zip_code = 'Zip code is required';
       }
     }
     if (s === 2) {
@@ -1288,7 +1291,11 @@ function StepDateVenue({
                   className="h-11"
                 />
               </FormField>
-              <FormField label="Full Address">
+              <FormField
+                label="Full Address"
+                error={errors.address_text}
+                required
+              >
                 <div className="relative">
                   <Search className="absolute top-3.5 left-3 size-4 text-muted-foreground" />
                   <Input
@@ -1297,24 +1304,31 @@ function StepDateVenue({
                       updateField('address_text', e.target.value)
                     }
                     placeholder="Start typing address..."
+                    aria-invalid={!!errors.address_text}
                     className="h-11 pl-9"
                   />
                 </div>
               </FormField>
               <div className="grid grid-cols-2 gap-4">
-                <FormField label="City">
+                <FormField label="City" error={errors.city} required>
                   <Input
                     value={form.city}
                     onChange={(e) => updateField('city', e.target.value)}
                     placeholder="e.g. Mumbai"
+                    aria-invalid={!!errors.city}
                     className="h-11"
                   />
                 </FormField>
-                <FormField label="Zip Code">
+                <FormField
+                  label="Zip Code"
+                  error={errors.zip_code}
+                  required
+                >
                   <Input
                     value={form.zip_code}
                     onChange={(e) => updateField('zip_code', e.target.value)}
                     placeholder="e.g. 400001"
+                    aria-invalid={!!errors.zip_code}
                     className="h-11"
                   />
                 </FormField>
