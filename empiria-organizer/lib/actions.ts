@@ -100,6 +100,8 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
 
   const supabase = getSupabaseAdmin();
 
+  if (!form.category_id) return { success: false, error: 'Category is required' };
+
   const totalCapacity = form.ticket_tiers.reduce((sum, t) => sum + (t.initial_quantity || 0), 0);
 
   // Create event
@@ -190,6 +192,8 @@ export async function updateEvent(
     return { success: false, error: 'Not found or not authorized' };
   }
 
+  if (!form.category_id) return { success: false, error: 'Category is required' };
+
   const totalCapacity = form.ticket_tiers.reduce((sum, t) => sum + (t.initial_quantity || 0), 0);
 
   const { error: updateError } = await supabase
@@ -256,7 +260,7 @@ export async function publishEvent(eventId: string): Promise<ActionResult<{ id: 
 
   const { data: event } = await supabase
     .from('events')
-    .select('id, organizer_id, status, title')
+    .select('id, organizer_id, status, title, category_id')
     .eq('id', eventId)
     .single();
 
@@ -270,6 +274,10 @@ export async function publishEvent(eventId: string): Promise<ActionResult<{ id: 
 
   if (!event.title) {
     return { success: false, error: 'Event must have a title' };
+  }
+
+  if (!event.category_id) {
+    return { success: false, error: 'Event must have a category' };
   }
 
   // Require at least one occurrence
@@ -1067,6 +1075,88 @@ export async function updateUserAvatar(
   if (dbError) return { success: false, error: dbError.message };
 
   return { success: true, data: { avatar_url } };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EVENT COVER UPLOAD
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function uploadEventCoverImage(
+  formData: FormData
+): Promise<ActionResult<{ cover_image_url: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const file = formData.get('cover_image') as File | null;
+  if (!file || file.size === 0) return { success: false, error: 'No file provided' };
+
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowed.includes(file.type)) {
+    return { success: false, error: 'File must be a JPEG, PNG, WebP, or GIF image' };
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    return { success: false, error: 'File must be under 5 MB' };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const ext = file.name.split('.').pop() ?? 'jpg';
+  const safeSub = user.sub.replace(/\|/g, '_');
+  const uniqueId = crypto.randomUUID();
+  const path = `${safeSub}/${uniqueId}.${ext}`;
+
+  // Make sure the "Cover_image" bucket exists and is public in Supabase
+  const { error: uploadError } = await supabase.storage
+    .from('Cover_image')
+    .upload(path, file, { contentType: file.type });
+
+  if (uploadError) return { success: false, error: uploadError.message };
+
+  const { data: publicUrlData } = supabase.storage.from('Cover_image').getPublicUrl(path);
+
+  // We add a timestamp query param to bypass caching if we were overwriting.
+  // Since we use unique UUIDs, it's not strictly necessary, but helpful.
+  const cover_image_url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+  return { success: true, data: { cover_image_url } };
+}
+
+export async function uploadEventGalleryImage(
+  formData: FormData
+): Promise<ActionResult<{ photo_url: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const file = formData.get('gallery_image') as File | null;
+  if (!file || file.size === 0) return { success: false, error: 'No file provided' };
+
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowed.includes(file.type)) {
+    return { success: false, error: 'File must be a JPEG, PNG, WebP, or GIF image' };
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    return { success: false, error: 'File must be under 5 MB' };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const ext = file.name.split('.').pop() ?? 'jpg';
+  const safeSub = user.sub.replace(/\|/g, '_');
+  const uniqueId = crypto.randomUUID();
+  const path = `${safeSub}/${uniqueId}.${ext}`;
+
+  // Make sure the "events_gallery" bucket exists and is public in Supabase
+  const { error: uploadError } = await supabase.storage
+    .from('events_gallery')
+    .upload(path, file, { contentType: file.type });
+
+  if (uploadError) return { success: false, error: uploadError.message };
+
+  const { data: publicUrlData } = supabase.storage.from('events_gallery').getPublicUrl(path);
+
+  const photo_url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+  return { success: true, data: { photo_url } };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

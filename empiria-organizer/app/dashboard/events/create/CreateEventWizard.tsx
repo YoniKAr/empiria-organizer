@@ -330,6 +330,7 @@ export default function CreateEventWizard({
       if (!form.slug.trim()) errs.slug = 'Slug is required';
       if (form.what_to_expect.every((item) => !item.trim()))
         errs.what_to_expect = 'At least one "What to Expect" bullet is required';
+      if (!form.category_id) errs.category_id = 'Category is required';
     }
     if (s === 1) {
       if (form.occurrences.length === 0) {
@@ -590,7 +591,11 @@ export default function CreateEventWizard({
             />
           )}
           {step === 3 && (
-            <StepMedia form={form} updateField={updateField} />
+            <StepMedia
+              form={form}
+              updateField={updateField}
+              setToast={setToast}
+            />
           )}
           {step === 4 && (
             <StepReview form={form} categories={categories} />
@@ -1013,7 +1018,7 @@ function StepBasics({
         </FormField>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <FormField label="Category">
+          <FormField label="Category" required error={errors.category_id}>
             <Select
               value={form.category_id}
               onValueChange={(v) => updateField('category_id', v)}
@@ -1505,28 +1510,98 @@ function StepTickets({
   );
 }
 
+import { uploadEventCoverImage, uploadEventGalleryImage } from '@/lib/actions';
+
 // ─── Step 4: Media ──────────────────────────────────────────────────────────
 function StepMedia({
   form,
   updateField,
+  setToast,
 }: {
   form: EventFormData;
   updateField: <K extends keyof EventFormData>(
     key: K,
     value: EventFormData[K]
   ) => void;
+  setToast: (toast: { message: string; type: 'success' | 'error' } | null) => void;
 }) {
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
 
-  const handlePhotoFiles = (files: FileList | null) => {
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setToast({ message: 'Cover image must be under 5 MB', type: 'error' });
+      return;
+    }
+
+    setIsUploadingCover(true);
+    try {
+      const formData = new FormData();
+      formData.append('cover_image', file);
+
+      const res = await uploadEventCoverImage(formData);
+      if (res.success) {
+        updateField('cover_image_url', res.data.cover_image_url);
+        setToast({ message: 'Cover image uploaded', type: 'success' });
+      } else {
+        setToast({ message: res.error, type: 'error' });
+      }
+    } catch (err: any) {
+      setToast({ message: err.message || 'Upload failed', type: 'error' });
+    } finally {
+      setIsUploadingCover(false);
+      if (coverInputRef.current) coverInputRef.current.value = '';
+    }
+  };
+
+  const handlePhotoFiles = async (files: FileList | null) => {
     if (!files) return;
-    const newUrls = Array.from(files).map((f) => URL.createObjectURL(f));
-    updateField('photo_urls', [...form.photo_urls, ...newUrls]);
+
+    setIsUploadingGallery(true);
+    try {
+      const newUrls: string[] = [];
+      const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+
+        if (file.size > MAX_FILE_SIZE) {
+          setToast({ message: `File ${file.name} is too large (> 5MB)`, type: 'error' });
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.append('gallery_image', file);
+
+        const res = await uploadEventGalleryImage(formData);
+        if (res.success) {
+          newUrls.push(res.data.photo_url);
+        } else {
+          setToast({ message: res.error, type: 'error' });
+        }
+      }
+
+      if (newUrls.length > 0) {
+        updateField('photo_urls', [...form.photo_urls, ...newUrls]);
+        setToast({ message: `Successfully uploaded ${newUrls.length} image(s)`, type: 'success' });
+      }
+
+    } catch (err: any) {
+      setToast({ message: err.message || 'Gallery upload failed', type: 'error' });
+    } finally {
+      setIsUploadingGallery(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
   };
 
   const removePhoto = (idx: number) => {
-    // Revoke the object URL to free memory
-    URL.revokeObjectURL(form.photo_urls[idx]);
+    // In a full implementation, you'd also delete the image from Supabase Storage here.
+    // For now, we just remove it from the form state so it isn't linked to the event.
     updateField('photo_urls', form.photo_urls.filter((_, i) => i !== idx));
   };
 
@@ -1542,14 +1617,38 @@ function StepMedia({
         <div className="space-y-4">
           <p className="text-sm font-semibold text-foreground">Cover Image</p>
           <FormField
+            label="Upload Cover Image"
+            hint="Recommended size: 1200 x 630px. Max 5MB (JPEG, PNG, WebP)"
+          >
+            <div className="flex gap-3 items-center">
+              <Input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                ref={coverInputRef}
+                onChange={handleCoverUpload}
+                disabled={isUploadingCover}
+                className="h-11 cursor-pointer flex-1"
+              />
+              {isUploadingCover && (
+                <span className="text-sm text-muted-foreground animate-pulse whitespace-nowrap">
+                  Uploading...
+                </span>
+              )}
+            </div>
+            <div className="text-center text-xs text-muted-foreground mt-2 font-medium">
+              — OR —
+            </div>
+          </FormField>
+          <FormField
             label="Cover Image URL"
-            hint="Paste a direct image URL. Recommended size: 1200 x 630px."
+            hint="Paste a direct image URL if you prefer not to upload."
           >
             <Input
               value={form.cover_image_url}
               onChange={(e) => updateField('cover_image_url', e.target.value)}
               placeholder="https://example.com/my-event-banner.jpg"
               className="h-11"
+              disabled={isUploadingCover}
             />
           </FormField>
 
@@ -1620,15 +1719,18 @@ function StepMedia({
             <button
               type="button"
               onClick={() => photoInputRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/50 py-12 transition-colors hover:border-primary/40 hover:bg-primary/5"
+              disabled={isUploadingGallery}
+              className="flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/50 py-12 transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary">
                 <ImageIcon className="size-6 text-muted-foreground" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-foreground">Upload photos</p>
+                <p className="text-sm font-medium text-foreground">
+                  {isUploadingGallery ? 'Uploading...' : 'Upload photos'}
+                </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Click to browse — JPG, PNG, WebP supported
+                  {isUploadingGallery ? 'Please wait' : 'Click to browse — JPG, PNG, WebP supported'}
                 </p>
               </div>
             </button>
@@ -1661,10 +1763,13 @@ function StepMedia({
               <button
                 type="button"
                 onClick={() => photoInputRef.current?.click()}
-                className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/50 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                disabled={isUploadingGallery}
+                className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/50 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="size-5" />
-                <span className="text-xs font-medium">Add</span>
+                <span className="text-xs font-medium">
+                  {isUploadingGallery ? 'Uploading...' : 'Add More'}
+                </span>
               </button>
             </div>
           )}
