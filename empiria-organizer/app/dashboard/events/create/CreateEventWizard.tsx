@@ -359,9 +359,10 @@ export default function CreateEventWizard({
     }
     if (s === 2) {
       form.ticket_tiers.forEach((tier, i) => {
-        if (!tier.name.trim())
-          errs[`tier_${i}_name`] = 'Tier name is required';
+        if (!tier.name.trim()) errs[`tier_${i}_name`] = 'Tier name is required';
         if (tier.initial_quantity <= 0) errs[`tier_${i}_qty`] = 'Must be > 0';
+        if (tier.price < 0) errs[`tier_${i}_price`] = 'Price cannot be negative';
+        if (!tier.max_per_order || tier.max_per_order < 1) errs[`tier_${i}_max`] = 'Must be >= 1';
       });
     }
     setErrors(errs);
@@ -666,6 +667,12 @@ function LivePreview({
         ? 'Online'
         : 'Hybrid';
 
+  const totalAvailability = useMemo(() => {
+    return form.ticket_tiers
+      .filter((t) => !t.is_hidden)
+      .reduce((sum, t) => sum + (t.initial_quantity || 0), 0);
+  }, [form.ticket_tiers]);
+
   return (
     <div className="flex h-full flex-col items-center px-8 py-10">
       {/* Header */}
@@ -784,12 +791,19 @@ function LivePreview({
             )}
 
             {/* Tickets */}
-            {lowestPrice !== null && (
-              <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                <Ticket className="size-3.5 shrink-0 text-primary" />
-                {lowestPrice === 0
-                  ? 'Free tickets available'
-                  : `Tickets from $${lowestPrice.toFixed(0)}`}
+            {(lowestPrice !== null || totalAvailability > 0) && (
+              <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Ticket className="size-3.5 shrink-0 text-primary" />
+                  {lowestPrice === 0
+                    ? 'Free tickets available'
+                    : `Tickets from $${lowestPrice?.toFixed(0) || 0}`}
+                </div>
+                {totalAvailability > 0 && (
+                  <span className="text-xs font-medium text-foreground">
+                    {totalAvailability} available
+                  </span>
+                )}
               </div>
             )}
 
@@ -1401,6 +1415,8 @@ function StepTickets({
               </FormField>
               <FormField
                 label={`Price (${form.currency.toUpperCase()})`}
+                error={errors[`tier_${i}_price`]}
+                required
               >
                 <Input
                   type="number"
@@ -1410,6 +1426,7 @@ function StepTickets({
                   onChange={(e) =>
                     updateTier(i, 'price', parseFloat(e.target.value) || 0)
                   }
+                  aria-invalid={!!errors[`tier_${i}_price`]}
                   className="h-11"
                 />
               </FormField>
@@ -1433,7 +1450,11 @@ function StepTickets({
                   className="h-11"
                 />
               </FormField>
-              <FormField label="Max Per Order">
+              <FormField
+                label="Max Per Order"
+                error={errors[`tier_${i}_max`]}
+                required
+              >
                 <Input
                   type="number"
                   min="1"
@@ -1446,6 +1467,7 @@ function StepTickets({
                       parseInt(e.target.value) || 1
                     )
                   }
+                  aria-invalid={!!errors[`tier_${i}_max`]}
                   className="h-11"
                 />
               </FormField>
