@@ -1423,9 +1423,10 @@ function StepTickets({
                   min="0"
                   step="0.01"
                   value={tier.price}
-                  onChange={(e) =>
-                    updateTier(i, 'price', parseFloat(e.target.value) || 0)
-                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateTier(i, 'price', val === '' ? 0 : parseFloat(val));
+                  }}
                   aria-invalid={!!errors[`tier_${i}_price`]}
                   className="h-11"
                 />
