@@ -10,6 +10,7 @@ import {
   Maximize,
   Trash2,
   CircleDot,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/button";
 import type { ToolbarProps, DrawingTool } from "./types";
@@ -30,6 +31,8 @@ export function Toolbar({
   onResetView,
   onDeleteSelected,
   hasSelection,
+  addingToZoneName,
+  onCancelAddToZone,
 }: ToolbarProps) {
   return (
     <div className="flex items-center gap-1 p-2 border-b bg-background">
@@ -69,6 +72,20 @@ export function Toolbar({
       >
         <Trash2 className="h-4 w-4" />
       </Button>
+
+      {/* "Adding to zone" badge */}
+      {addingToZoneName && (
+        <div className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+          <span>Adding to: {addingToZoneName}</span>
+          <button
+            onClick={onCancelAddToZone}
+            className="hover:bg-primary/20 rounded-full p-0.5"
+            title="Cancel"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

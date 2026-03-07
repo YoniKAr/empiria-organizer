@@ -8,6 +8,8 @@ export interface ToolbarProps {
   onResetView: () => void;
   onDeleteSelected: () => void;
   hasSelection: boolean;
+  addingToZoneName?: string;
+  onCancelAddToZone?: () => void;
 }
 
 export interface ZonePropertiesPanelProps {

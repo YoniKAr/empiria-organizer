@@ -419,6 +419,8 @@ export default function CreateEventWizard({
       zip_code: form.zip_code,
       currency: form.currency,
       ticket_tiers: form.ticket_tiers,
+      seating_type: form.seating_type,
+      seating_config: form.seating_config as Record<string, unknown> | null,
     };
   };
 
@@ -609,6 +611,7 @@ export default function CreateEventWizard({
               seatingConfig={form.seating_config}
               onSeatingTypeChange={(type) => updateField('seating_type', type)}
               onSeatingConfigChange={(config) => updateField('seating_config', config)}
+              ticketTiers={form.ticket_tiers.map((t) => ({ id: t.id, name: t.name }))}
             />
           )}
           {step === 3 && (

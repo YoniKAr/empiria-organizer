@@ -8,6 +8,7 @@ import {
   Circle,
   FabricImage,
   FabricObject,
+  FabricText,
   Point,
   util,
   type TPointerEventInfo,
@@ -19,6 +20,7 @@ import type { DrawingTool } from "./types";
 import type {
   SeatingConfig,
   ZoneDefinition,
+  ZonePolygon,
   SectionDefinition,
   SeatDefinition,
 } from "@/lib/seatmap-types";
@@ -26,9 +28,11 @@ import type {
 // Fabric.js v6 supports a `data` property at runtime but doesn't include it in TS types.
 interface ObjData {
   zoneId?: string;
+  polygonId?: string;
   seatId?: string;
   sectionId?: string;
   label?: string;
+  isSeatLabel?: boolean;
 }
 
 function getObjData(obj: FabricObject): ObjData | undefined {
@@ -48,11 +52,17 @@ interface SeatmapDesignerProps {
   onChange: (config: SeatingConfig) => void;
 }
 
+interface PolygonState {
+  id: string;
+  seats: SeatDefinition[];
+}
+
 interface ZoneState {
   id: string;
   name: string;
   color: string;
-  seats: SeatDefinition[];
+  polygons: PolygonState[];
+  seats: SeatDefinition[]; // aggregated across all polygons
 }
 
 const CANVAS_WIDTH = 800;
@@ -65,6 +75,8 @@ const ZONE_COLORS = [
   "#f59e0b",
   "#8b5cf6",
   "#ec4899",
+  "#14b8a6",
+  "#f97316",
 ];
 
 export function SeatmapDesigner({
@@ -80,6 +92,7 @@ export function SeatmapDesigner({
   const [activeTool, setActiveTool] = useState<DrawingTool>("select");
   const [zones, setZones] = useState<ZoneState[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [addingToZoneId, setAddingToZoneId] = useState<string | null>(null);
   const zoneCounterRef = useRef(0);
   const zonesRef = useRef<ZoneState[]>([]);
 
@@ -151,6 +164,35 @@ export function SeatmapDesigner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUrl]);
 
+  // Extract points from a fabric object (Polygon or Rect)
+  function extractPoints(obj: FabricObject): [number, number][] {
+    if (obj instanceof Polygon) {
+      const matrix = obj.calcTransformMatrix();
+      return (obj.points || []).map((p) => {
+        const transformed = util.transformPoint(
+          new Point(
+            p.x - (obj.pathOffset?.x || 0),
+            p.y - (obj.pathOffset?.y || 0)
+          ),
+          matrix
+        );
+        return [transformed.x, transformed.y] as [number, number];
+      });
+    } else if (obj instanceof Rect) {
+      const left = obj.left || 0;
+      const top = obj.top || 0;
+      const w = (obj.width || 0) * (obj.scaleX || 1);
+      const h = (obj.height || 0) * (obj.scaleY || 1);
+      return [
+        [left, top],
+        [left + w, top],
+        [left + w, top + h],
+        [left, top + h],
+      ];
+    }
+    return [];
+  }
+
   // Sync canvas zones to SeatingConfig
   const syncConfig = useCallback(() => {
     const canvas = fabricRef.current;
@@ -158,51 +200,60 @@ export function SeatmapDesigner({
 
     const currentZones = zonesRef.current;
     const objects = canvas.getObjects();
-    const zoneDefs: ZoneDefinition[] = [];
-    const sectionDefs: SectionDefinition[] = [];
 
-    for (const obj of objects) {
-      const d = getObjData(obj);
-      if (!d?.zoneId) continue;
-      const zone = currentZones.find((z) => z.id === d.zoneId);
-      if (!zone) continue;
+    if (mode === "zone") {
+      // Build multi-polygon zone definitions
+      const zonePolygonsMap = new Map<string, ZonePolygon[]>();
 
-      let points: [number, number][] = [];
+      for (const obj of objects) {
+        const d = getObjData(obj);
+        if (!d?.zoneId || !d?.polygonId) continue;
+        if (d.isSeatLabel || d.seatId) continue;
 
-      if (obj instanceof Polygon) {
-        const matrix = obj.calcTransformMatrix();
-        points = (obj.points || []).map((p) => {
-          const transformed = util.transformPoint(
-            new Point(
-              p.x - (obj.pathOffset?.x || 0),
-              p.y - (obj.pathOffset?.y || 0)
-            ),
-            matrix
-          );
-          return [transformed.x, transformed.y] as [number, number];
-        });
-      } else if (obj instanceof Rect) {
-        const left = obj.left || 0;
-        const top = obj.top || 0;
-        const w = (obj.width || 0) * (obj.scaleX || 1);
-        const h = (obj.height || 0) * (obj.scaleY || 1);
-        points = [
-          [left, top],
-          [left + w, top],
-          [left + w, top + h],
-          [left, top + h],
-        ];
-      }
+        const points = extractPoints(obj);
+        if (points.length < 3) continue;
 
-      if (mode === "zone") {
-        zoneDefs.push({
-          id: zone.id,
-          tier_id: "",
-          name: zone.name,
-          color: zone.color,
+        if (!zonePolygonsMap.has(d.zoneId)) {
+          zonePolygonsMap.set(d.zoneId, []);
+        }
+        zonePolygonsMap.get(d.zoneId)!.push({
+          id: d.polygonId,
           points,
         });
-      } else {
+      }
+
+      const zoneDefs: ZoneDefinition[] = currentZones
+        .filter((z) => zonePolygonsMap.has(z.id))
+        .map((z) => ({
+          id: z.id,
+          tier_id: "",
+          name: z.name,
+          color: z.color,
+          polygons: zonePolygonsMap.get(z.id) || [],
+        }));
+
+      onChange({
+        image_url: imageUrl,
+        image_width: imageWidth,
+        image_height: imageHeight,
+        view_mode: "image_overlay",
+        zones: zoneDefs,
+      });
+    } else {
+      // Seat mode — use sections (backward compatible flat format)
+      const sectionDefs: SectionDefinition[] = [];
+
+      for (const obj of objects) {
+        const d = getObjData(obj);
+        if (!d?.zoneId || d.seatId || d.isSeatLabel) continue;
+        if (!d.polygonId) continue;
+
+        const zone = currentZones.find((z) => z.id === d.zoneId);
+        if (!zone) continue;
+
+        const points = extractPoints(obj);
+        if (points.length < 3) continue;
+
         sectionDefs.push({
           id: zone.id,
           tier_id: "",
@@ -212,18 +263,15 @@ export function SeatmapDesigner({
           seats: zone.seats,
         });
       }
+
+      onChange({
+        image_url: imageUrl,
+        image_width: imageWidth,
+        image_height: imageHeight,
+        view_mode: "image_overlay",
+        sections: sectionDefs,
+      });
     }
-
-    const config: SeatingConfig = {
-      image_url: imageUrl,
-      image_width: imageWidth,
-      image_height: imageHeight,
-      view_mode: "image_overlay",
-      zones: mode === "zone" ? zoneDefs : undefined,
-      sections: mode === "seat" ? sectionDefs : undefined,
-    };
-
-    onChange(config);
   }, [imageUrl, imageWidth, imageHeight, mode, onChange]);
 
   // Listen for object modifications to sync config
@@ -247,7 +295,7 @@ export function SeatmapDesigner({
     canvas.selection = activeTool === "select";
     canvas.forEachObject((obj) => {
       const d = getObjData(obj);
-      if (d?.zoneId) {
+      if (d?.zoneId && !d.seatId && !d.isSeatLabel) {
         obj.selectable = activeTool === "select";
         obj.evented = activeTool === "select";
       }
@@ -270,7 +318,7 @@ export function SeatmapDesigner({
 
     const handleMouseDown = (e: TPointerEventInfo) => {
       const pointer = e.scenePoint;
-      addRectangleZone(canvas, pointer.x, pointer.y);
+      addShape(canvas, "rectangle", pointer.x, pointer.y);
     };
 
     canvas.on("mouse:down", handleMouseDown);
@@ -278,7 +326,7 @@ export function SeatmapDesigner({
       canvas.off("mouse:down", handleMouseDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool]);
+  }, [activeTool, addingToZoneId]);
 
   // Polygon tool: click to add points, double-click to close
   useEffect(() => {
@@ -312,34 +360,69 @@ export function SeatmapDesigner({
       localDots.forEach((d) => canvas.remove(d));
       localDots.length = 0;
 
-      zoneCounterRef.current += 1;
-      const id = crypto.randomUUID();
-      const color =
-        ZONE_COLORS[zoneCounterRef.current % ZONE_COLORS.length];
+      const polygonId = crypto.randomUUID();
 
       const polygon = new Polygon(
         localPoints.map((p) => ({ x: p.x, y: p.y })),
         {
-          fill: color + "40",
-          stroke: color,
+          fill: "",
+          stroke: "",
           strokeWidth: 2,
         }
       );
-      setObjData(polygon, { zoneId: id });
 
-      canvas.add(polygon);
-      canvas.setActiveObject(polygon);
-      canvas.renderAll();
+      if (addingToZoneId) {
+        // Add polygon to existing zone
+        const existingZone = zonesRef.current.find((z) => z.id === addingToZoneId);
+        if (existingZone) {
+          polygon.set({
+            fill: existingZone.color + "40",
+            stroke: existingZone.color,
+          });
+          setObjData(polygon, { zoneId: addingToZoneId, polygonId });
 
-      const newZone: ZoneState = {
-        id,
-        name: `Zone ${zoneCounterRef.current}`,
-        color,
-        seats: [],
-      };
+          canvas.add(polygon);
+          canvas.setActiveObject(polygon);
+          canvas.renderAll();
 
-      setZones((prev) => [...prev, newZone]);
-      setSelectedZoneId(id);
+          setZones((prev) =>
+            prev.map((z) =>
+              z.id === addingToZoneId
+                ? { ...z, polygons: [...z.polygons, { id: polygonId, seats: [] }] }
+                : z
+            )
+          );
+          setSelectedZoneId(addingToZoneId);
+        }
+      } else {
+        // Create new zone
+        zoneCounterRef.current += 1;
+        const id = crypto.randomUUID();
+        const color =
+          ZONE_COLORS[zoneCounterRef.current % ZONE_COLORS.length];
+
+        polygon.set({
+          fill: color + "40",
+          stroke: color,
+        });
+        setObjData(polygon, { zoneId: id, polygonId });
+
+        canvas.add(polygon);
+        canvas.setActiveObject(polygon);
+        canvas.renderAll();
+
+        const newZone: ZoneState = {
+          id,
+          name: `Zone ${zoneCounterRef.current}`,
+          color,
+          polygons: [{ id: polygonId, seats: [] }],
+          seats: [],
+        };
+
+        setZones((prev) => [...prev, newZone]);
+        setSelectedZoneId(id);
+      }
+
       localPoints = [];
       setActiveTool("select");
       syncConfig();
@@ -356,7 +439,7 @@ export function SeatmapDesigner({
       canvas.renderAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool]);
+  }, [activeTool, addingToZoneId]);
 
   // Pan tool
   useEffect(() => {
@@ -398,35 +481,68 @@ export function SeatmapDesigner({
     };
   }, [activeTool]);
 
-  function addRectangleZone(canvas: Canvas, x: number, y: number) {
-    zoneCounterRef.current += 1;
-    const id = crypto.randomUUID();
-    const color = ZONE_COLORS[zoneCounterRef.current % ZONE_COLORS.length];
+  function addShape(canvas: Canvas, shape: "rectangle", x: number, y: number) {
+    const polygonId = crypto.randomUUID();
 
     const rect = new Rect({
       left: x - 60,
       top: y - 40,
       width: 120,
       height: 80,
-      fill: color + "40",
-      stroke: color,
+      fill: "",
+      stroke: "",
       strokeWidth: 2,
     });
-    setObjData(rect, { zoneId: id });
 
-    canvas.add(rect);
-    canvas.setActiveObject(rect);
-    canvas.renderAll();
+    if (addingToZoneId) {
+      const existingZone = zonesRef.current.find((z) => z.id === addingToZoneId);
+      if (existingZone) {
+        rect.set({
+          fill: existingZone.color + "40",
+          stroke: existingZone.color,
+        });
+        setObjData(rect, { zoneId: addingToZoneId, polygonId });
 
-    const newZone: ZoneState = {
-      id,
-      name: `Zone ${zoneCounterRef.current}`,
-      color,
-      seats: [],
-    };
+        canvas.add(rect);
+        canvas.setActiveObject(rect);
+        canvas.renderAll();
 
-    setZones((prev) => [...prev, newZone]);
-    setSelectedZoneId(id);
+        setZones((prev) =>
+          prev.map((z) =>
+            z.id === addingToZoneId
+              ? { ...z, polygons: [...z.polygons, { id: polygonId, seats: [] }] }
+              : z
+          )
+        );
+        setSelectedZoneId(addingToZoneId);
+      }
+    } else {
+      zoneCounterRef.current += 1;
+      const id = crypto.randomUUID();
+      const color = ZONE_COLORS[zoneCounterRef.current % ZONE_COLORS.length];
+
+      rect.set({
+        fill: color + "40",
+        stroke: color,
+      });
+      setObjData(rect, { zoneId: id, polygonId });
+
+      canvas.add(rect);
+      canvas.setActiveObject(rect);
+      canvas.renderAll();
+
+      const newZone: ZoneState = {
+        id,
+        name: `Zone ${zoneCounterRef.current}`,
+        color,
+        polygons: [{ id: polygonId, seats: [] }],
+        seats: [],
+      };
+
+      setZones((prev) => [...prev, newZone]);
+      setSelectedZoneId(id);
+    }
+
     setActiveTool("select");
     syncConfig();
   }
@@ -441,7 +557,7 @@ export function SeatmapDesigner({
 
     canvas.forEachObject((obj) => {
       const d = getObjData(obj);
-      if (d?.zoneId === id) {
+      if (d?.zoneId === id && !d.seatId && !d.isSeatLabel) {
         obj.set({ fill: color + "40", stroke: color });
       }
     });
@@ -459,18 +575,42 @@ export function SeatmapDesigner({
     if (!d?.zoneId) return;
 
     const zoneId = d.zoneId;
+    const polygonId = d.polygonId;
 
-    // Also remove any seat circles belonging to this zone
-    const toRemove = canvas.getObjects().filter((obj) => {
-      const od = getObjData(obj);
-      return od?.zoneId === zoneId || od?.sectionId === zoneId;
-    });
-    toRemove.forEach((obj) => canvas.remove(obj));
-    canvas.discardActiveObject();
-    canvas.renderAll();
+    // Check how many polygons the zone has
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone) return;
 
-    setZones((prev) => prev.filter((z) => z.id !== zoneId));
-    setSelectedZoneId(null);
+    if (zone.polygons.length <= 1) {
+      // Deleting last polygon — remove the whole zone
+      const toRemove = canvas.getObjects().filter((obj) => {
+        const od = getObjData(obj);
+        return od?.zoneId === zoneId || od?.sectionId === zoneId;
+      });
+      toRemove.forEach((obj) => canvas.remove(obj));
+      canvas.discardActiveObject();
+      canvas.renderAll();
+
+      setZones((prev) => prev.filter((z) => z.id !== zoneId));
+      setSelectedZoneId(null);
+    } else {
+      // Remove just this polygon from the zone
+      canvas.remove(active);
+      canvas.discardActiveObject();
+      canvas.renderAll();
+
+      setZones((prev) =>
+        prev.map((z) =>
+          z.id === zoneId
+            ? {
+                ...z,
+                polygons: z.polygons.filter((p) => p.id !== polygonId),
+              }
+            : z
+        )
+      );
+    }
+
     syncConfig();
   }
 
@@ -479,15 +619,15 @@ export function SeatmapDesigner({
     const canvas = fabricRef.current;
     if (!canvas) return;
 
-    // Find the zone's fabric object to get its bounding box
+    // Find the zone's fabric objects to get bounding box (use first polygon)
     const allObjs = canvas.getObjects();
     const zoneObj = allObjs.find((obj) => {
       const d = getObjData(obj);
-      return d?.zoneId === selectedZoneId;
+      return d?.zoneId === selectedZoneId && !d.seatId && !d.isSeatLabel;
     });
     if (!zoneObj) return;
 
-    // Remove existing seat circles for this section
+    // Remove existing seat circles and labels for this section
     const existingSeats = allObjs.filter((obj) => {
       const od = getObjData(obj);
       return od?.sectionId === selectedZoneId;
@@ -520,6 +660,7 @@ export function SeatmapDesigner({
 
         seats.push({ id: seatId, label, x, y });
 
+        // Seat circle
         const circle = new Circle({
           left: x - 6,
           top: y - 6,
@@ -536,6 +677,24 @@ export function SeatmapDesigner({
           label,
         });
         canvas.add(circle);
+
+        // Seat label text
+        const seatLabel = new FabricText(label, {
+          left: x,
+          top: y,
+          fontSize: 7,
+          fontFamily: "system-ui, sans-serif",
+          fill: "#ffffff",
+          originX: "center",
+          originY: "center",
+          selectable: false,
+          evented: false,
+        });
+        setObjData(seatLabel, {
+          sectionId: selectedZoneId,
+          isSeatLabel: true,
+        });
+        canvas.add(seatLabel);
       }
     }
 
@@ -575,6 +734,15 @@ export function SeatmapDesigner({
     canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
   }
 
+  function handleStartAddingToZone(zoneId: string) {
+    setAddingToZoneId(zoneId);
+    setSelectedZoneId(zoneId);
+  }
+
+  function handleStopAddingToZone() {
+    setAddingToZoneId(null);
+  }
+
   const selectedZone = zones.find((z) => z.id === selectedZoneId);
 
   return (
@@ -587,6 +755,12 @@ export function SeatmapDesigner({
         onResetView={handleResetView}
         onDeleteSelected={handleDeleteSelected}
         hasSelection={selectedZoneId !== null}
+        addingToZoneName={
+          addingToZoneId
+            ? zones.find((z) => z.id === addingToZoneId)?.name
+            : undefined
+        }
+        onCancelAddToZone={handleStopAddingToZone}
       />
 
       <div className="flex">
@@ -617,37 +791,65 @@ export function SeatmapDesigner({
               </h3>
               <div className="space-y-1">
                 {zones.map((z) => (
-                  <button
-                    key={z.id}
-                    className={`w-full text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${
-                      selectedZoneId === z.id
-                        ? "bg-accent"
-                        : "hover:bg-accent/50"
-                    }`}
-                    onClick={() => {
-                      setSelectedZoneId(z.id);
-                      const canvas = fabricRef.current;
-                      if (!canvas) return;
-                      canvas.forEachObject((obj) => {
-                        const d = getObjData(obj);
-                        if (d?.zoneId === z.id) {
-                          canvas.setActiveObject(obj);
-                          canvas.renderAll();
-                        }
-                      });
-                    }}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: z.color }}
-                    />
-                    <span className="truncate">{z.name}</span>
-                    {mode === "seat" && z.seats.length > 0 && (
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {z.seats.length} seats
-                      </span>
+                  <div key={z.id} className="flex items-center gap-1">
+                    <button
+                      className={`flex-1 text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${
+                        selectedZoneId === z.id
+                          ? "bg-accent"
+                          : "hover:bg-accent/50"
+                      }`}
+                      onClick={() => {
+                        setSelectedZoneId(z.id);
+                        setAddingToZoneId(null);
+                        const canvas = fabricRef.current;
+                        if (!canvas) return;
+                        // Select the first polygon of this zone
+                        canvas.forEachObject((obj) => {
+                          const d = getObjData(obj);
+                          if (d?.zoneId === z.id && !d.seatId && !d.isSeatLabel) {
+                            canvas.setActiveObject(obj);
+                            canvas.renderAll();
+                            return;
+                          }
+                        });
+                      }}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: z.color }}
+                      />
+                      <span className="truncate">{z.name}</span>
+                      {z.polygons.length > 1 && (
+                        <span className="text-xs text-muted-foreground">
+                          ({z.polygons.length})
+                        </span>
+                      )}
+                      {mode === "seat" && z.seats.length > 0 && (
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {z.seats.length} seats
+                        </span>
+                      )}
+                    </button>
+                    {mode === "zone" && (
+                      <button
+                        title="Add polygon to this zone"
+                        className={`shrink-0 w-7 h-7 rounded flex items-center justify-center text-xs ${
+                          addingToZoneId === z.id
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-accent text-muted-foreground"
+                        }`}
+                        onClick={() => {
+                          if (addingToZoneId === z.id) {
+                            handleStopAddingToZone();
+                          } else {
+                            handleStartAddingToZone(z.id);
+                          }
+                        }}
+                      >
+                        +
+                      </button>
                     )}
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>

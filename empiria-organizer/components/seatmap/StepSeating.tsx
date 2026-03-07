@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Upload, LayoutGrid, MapPin } from "lucide-react";
+import { Upload, LayoutGrid, MapPin, List } from "lucide-react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { SeatmapDesigner } from "./SeatmapDesigner";
+import { SeatRangeEditor } from "./SeatRangeEditor";
 import { useImageUpload } from "./useImageUpload";
 import type { SeatingConfig, SeatingMode } from "@/lib/seatmap-types";
 
@@ -13,6 +14,7 @@ interface StepSeatingProps {
   seatingConfig: SeatingConfig | null;
   onSeatingTypeChange: (type: SeatingMode) => void;
   onSeatingConfigChange: (config: SeatingConfig) => void;
+  ticketTiers: Array<{ id: string; name: string }>;
 }
 
 const SEATING_OPTIONS: {
@@ -29,16 +31,16 @@ const SEATING_OPTIONS: {
   },
   {
     value: "reserved_seating_list",
-    label: "Zone Map",
+    label: "Assigned Seating",
     description:
-      "Draw zones on a venue image. Customers pick a zone and quantity.",
-    icon: MapPin,
+      "Define seat ranges (e.g., A1-A19, B1-B12). Customers get specific seats.",
+    icon: List,
   },
   {
     value: "seatmap_pro",
     label: "Seat Map",
     description:
-      "Place individual seats in sections. Customers pick exact seats on a map.",
+      "Place individual seats in sections on a venue image. Customers pick exact seats on a map.",
     icon: LayoutGrid,
   },
 ];
@@ -48,6 +50,7 @@ export function StepSeating({
   seatingConfig,
   onSeatingTypeChange,
   onSeatingConfigChange,
+  ticketTiers,
 }: StepSeatingProps) {
   const { uploading, error: uploadError, uploadImage } = useImageUpload();
   const [imageUrl, setImageUrl] = useState(seatingConfig?.image_url ?? null);
@@ -110,7 +113,17 @@ export function StepSeating({
         ))}
       </div>
 
-      {seatingType !== "general_admission" && (
+      {/* Type 2: Assigned Seating — SeatRangeEditor (no canvas) */}
+      {seatingType === "reserved_seating_list" && (
+        <SeatRangeEditor
+          tiers={ticketTiers}
+          initialConfig={seatingConfig}
+          onChange={onSeatingConfigChange}
+        />
+      )}
+
+      {/* Type 3: Seatmap Pro — image upload + SeatmapDesigner */}
+      {seatingType === "seatmap_pro" && (
         <>
           <div className="space-y-2">
             <Label>Venue Image</Label>
@@ -161,9 +174,7 @@ export function StepSeating({
 
           {imageUrl && (
             <SeatmapDesigner
-              mode={
-                seatingType === "reserved_seating_list" ? "zone" : "seat"
-              }
+              mode="seat"
               imageUrl={imageUrl}
               imageWidth={imageWidth}
               imageHeight={imageHeight}

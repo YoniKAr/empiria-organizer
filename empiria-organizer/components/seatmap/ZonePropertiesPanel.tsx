@@ -62,6 +62,34 @@ export function ZonePropertiesPanel({
               }
             />
           ))}
+          {/* Custom color picker */}
+          <label
+            className={`w-8 h-8 rounded-full border-2 cursor-pointer overflow-hidden relative transition-transform ${
+              !ZONE_COLORS.includes(selectedZone.color)
+                ? "border-foreground scale-110"
+                : "border-dashed border-muted-foreground"
+            }`}
+            style={{
+              backgroundColor: !ZONE_COLORS.includes(selectedZone.color)
+                ? selectedZone.color
+                : undefined,
+            }}
+            title="Custom color"
+          >
+            <input
+              type="color"
+              value={selectedZone.color}
+              onChange={(e) =>
+                onUpdateZone(selectedZone.id, selectedZone.name, e.target.value)
+              }
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            {ZONE_COLORS.includes(selectedZone.color) && (
+              <span className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs font-bold">
+                +
+              </span>
+            )}
+          </label>
         </div>
       </div>
     </div>
