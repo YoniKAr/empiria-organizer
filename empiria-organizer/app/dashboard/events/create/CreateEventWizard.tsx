@@ -41,6 +41,8 @@ import {
 } from '@/components/select'; //
 import { createEvent, updateEvent, publishEvent } from '@/lib/actions';
 import { useRouter } from 'next/navigation';
+import { StepSeating } from '@/components/seatmap/StepSeating';
+import type { SeatingMode, SeatingConfig } from '@/lib/seatmap-types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface TicketTier {
@@ -82,6 +84,8 @@ interface EventFormData {
   zip_code: string;
   currency: string;
   ticket_tiers: TicketTier[];
+  seating_type: SeatingMode;
+  seating_config: SeatingConfig | null;
 }
 
 interface Category {
@@ -114,9 +118,10 @@ interface ExistingEvent {
 const STEPS = [
   { id: 0, label: 'Basics', icon: FileText },
   { id: 1, label: 'Date & Venue', icon: Calendar },
-  { id: 2, label: 'Tickets', icon: Ticket },
-  { id: 3, label: 'Media', icon: ImageIcon },
-  { id: 4, label: 'Review', icon: Check },
+  { id: 2, label: 'Seating', icon: MapPin },
+  { id: 3, label: 'Tickets', icon: Ticket },
+  { id: 4, label: 'Media', icon: ImageIcon },
+  { id: 5, label: 'Review', icon: Check },
 ];
 
 const DEFAULT_TIER: TicketTier = {
@@ -158,6 +163,8 @@ const INITIAL_FORM: EventFormData = {
   zip_code: '',
   currency: 'cad',
   ticket_tiers: [{ ...DEFAULT_TIER }],
+  seating_type: 'general_admission' as SeatingMode,
+  seating_config: null,
 };
 
 function toSlug(text: string): string {
@@ -211,6 +218,8 @@ export default function CreateEventWizard({
           existingEvent.ticket_tiers.length > 0
             ? existingEvent.ticket_tiers
             : [{ ...DEFAULT_TIER }],
+        seating_type: (existingEvent as ExistingEvent & { seating_type?: SeatingMode }).seating_type || 'general_admission',
+        seating_config: (existingEvent as ExistingEvent & { seating_config?: SeatingConfig }).seating_config || null,
       };
     }
     return INITIAL_FORM;
@@ -362,6 +371,19 @@ export default function CreateEventWizard({
       }
     }
     if (s === 2) {
+      if (form.seating_type !== 'general_admission') {
+        if (!form.seating_config?.image_url) {
+          errs.seating_image = 'Please upload a venue image';
+        }
+        const items = form.seating_type === 'reserved_seating_list'
+          ? form.seating_config?.zones
+          : form.seating_config?.sections;
+        if (!items || items.length === 0) {
+          errs.seating_zones = 'Please draw at least one zone or section on the map';
+        }
+      }
+    }
+    if (s === 3) {
       form.ticket_tiers.forEach((tier, i) => {
         if (!tier.name.trim()) errs[`tier_${i}_name`] = 'Tier name is required';
         if (tier.initial_quantity <= 0) errs[`tier_${i}_qty`] = 'Must be > 0';
@@ -582,6 +604,14 @@ export default function CreateEventWizard({
             />
           )}
           {step === 2 && (
+            <StepSeating
+              seatingType={form.seating_type}
+              seatingConfig={form.seating_config}
+              onSeatingTypeChange={(type) => updateField('seating_type', type)}
+              onSeatingConfigChange={(config) => updateField('seating_config', config)}
+            />
+          )}
+          {step === 3 && (
             <StepTickets
               form={form}
               errors={errors}
@@ -590,14 +620,14 @@ export default function CreateEventWizard({
               removeTier={removeTier}
             />
           )}
-          {step === 3 && (
+          {step === 4 && (
             <StepMedia
               form={form}
               updateField={updateField}
               setToast={setToast}
             />
           )}
-          {step === 4 && (
+          {step === 5 && (
             <StepReview form={form} categories={categories} />
           )}
         </div>
