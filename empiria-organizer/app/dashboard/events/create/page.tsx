@@ -26,13 +26,18 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
   // Gate: Stripe must be connected before creating events
   const { data: user } = await supabase
     .from('users')
-    .select('stripe_onboarding_completed')
+    .select('stripe_onboarding_completed, full_name, avatar_url')
     .eq('auth0_id', effectiveOrgId)
     .single();
 
   if (!user?.stripe_onboarding_completed) {
     redirect('/dashboard/payments?reason=stripe_required');
   }
+
+  const organizer = {
+    name: user?.full_name || 'Organizer',
+    avatarUrl: user?.avatar_url || null,
+  };
 
   // Fetch categories for the dropdown
   const { data: categories } = await supabase
@@ -124,5 +129,5 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
     };
   }
 
-  return <CreateEventWizard categories={categories || []} existingEvent={existingEvent} />;
+  return <CreateEventWizard categories={categories || []} existingEvent={existingEvent} organizer={organizer} />;
 }

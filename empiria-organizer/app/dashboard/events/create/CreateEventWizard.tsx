@@ -171,12 +171,19 @@ function toSlug(text: string): string {
 }
 
 // ─── Main Component ─────────────────────────────────────────────────────────
+interface OrganizerInfo {
+  name: string;
+  avatarUrl: string | null;
+}
+
 export default function CreateEventWizard({
   categories,
   existingEvent,
+  organizer,
 }: {
   categories: Category[];
   existingEvent?: ExistingEvent;
+  organizer?: OrganizerInfo;
 }) {
   const router = useRouter();
   const isEditing = !!existingEvent;
@@ -639,7 +646,7 @@ export default function CreateEventWizard({
       {/* ─── RIGHT: Live Preview Panel ─────────────────────────────────── */}
       <aside className="hidden border-l border-border lg:block lg:w-[40%]">
         <div className="sticky top-0 h-screen overflow-y-auto bg-[#faf9f7]">
-          <LivePreview form={form} categories={categories} />
+          <LivePreview form={form} categories={categories} organizer={organizer} />
         </div>
       </aside>
     </div>
@@ -653,9 +660,11 @@ export default function CreateEventWizard({
 function LivePreview({
   form,
   categories,
+  organizer,
 }: {
   form: EventFormData;
   categories: Category[];
+  organizer?: OrganizerInfo;
 }) {
   const cat = categories.find((c) => c.id === form.category_id);
   const lowestPrice = useMemo(() => {
@@ -819,12 +828,21 @@ function LivePreview({
 
             {/* Footer */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <div className="flex -space-x-2">
-                  <div className="size-7 rounded-full border-2 border-card bg-[#3a7d5c]" />
-                  <div className="size-7 rounded-full border-2 border-card bg-[#5a6e8f]" />
-                </div>
-                <span className="ml-1 text-xs text-muted-foreground">+42</span>
+              <div className="flex items-center gap-2">
+                {organizer?.avatarUrl ? (
+                  <img
+                    src={organizer.avatarUrl}
+                    alt={organizer.name}
+                    className="size-7 rounded-full border-2 border-card object-cover"
+                  />
+                ) : (
+                  <div className="flex size-7 items-center justify-center rounded-full border-2 border-card bg-primary text-[11px] font-bold text-primary-foreground">
+                    {(organizer?.name || 'O').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="text-xs font-medium text-foreground">
+                  {organizer?.name || 'Organizer'}
+                </span>
               </div>
               <button className="text-sm font-semibold text-primary hover:underline">
                 View Details
