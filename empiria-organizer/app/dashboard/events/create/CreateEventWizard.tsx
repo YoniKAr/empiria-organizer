@@ -23,6 +23,8 @@ import {
   Users,
   Info,
   Search,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/button';
@@ -41,7 +43,9 @@ import {
 } from '@/components/select'; //
 import { createEvent, updateEvent, publishEvent } from '@/lib/actions';
 import { useRouter } from 'next/navigation';
-import { StepSeating } from '@/components/seatmap/StepSeating';
+import { SeatmapDesigner } from '@/components/seatmap/SeatmapDesigner';
+import { SeatRangeEditor } from '@/components/seatmap/SeatRangeEditor';
+import { useImageUpload } from '@/components/seatmap/useImageUpload';
 import type { SeatingMode, SeatingConfig } from '@/lib/seatmap-types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -118,24 +122,25 @@ interface ExistingEvent {
 const STEPS = [
   { id: 0, label: 'Basics', icon: FileText },
   { id: 1, label: 'Date & Venue', icon: Calendar },
-  { id: 2, label: 'Seating', icon: MapPin },
-  { id: 3, label: 'Tickets', icon: Ticket },
-  { id: 4, label: 'Media', icon: ImageIcon },
-  { id: 5, label: 'Review', icon: Check },
+  { id: 2, label: 'Tickets & Seating', icon: Ticket },
+  { id: 3, label: 'Media', icon: ImageIcon },
+  { id: 4, label: 'Review', icon: Check },
 ];
 
-const DEFAULT_TIER: TicketTier = {
-  id: crypto.randomUUID(),
-  name: '',
-  description: '',
-  price: 0,
-  currency: 'cad',
-  initial_quantity: 100,
-  max_per_order: 10,
-  sales_start_at: '',
-  sales_end_at: '',
-  is_hidden: false,
-};
+function makeDefaultTier(name: string): TicketTier {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    description: '',
+    price: 0,
+    currency: 'cad',
+    initial_quantity: 100,
+    max_per_order: 10,
+    sales_start_at: '',
+    sales_end_at: '',
+    is_hidden: false,
+  };
+}
 
 const DEFAULT_OCCURRENCE: Occurrence = {
   id: crypto.randomUUID(),
@@ -162,7 +167,7 @@ const INITIAL_FORM: EventFormData = {
   city: '',
   zip_code: '',
   currency: 'cad',
-  ticket_tiers: [{ ...DEFAULT_TIER }],
+  ticket_tiers: [makeDefaultTier('Adult'), makeDefaultTier('Child')],
   seating_type: 'general_admission' as SeatingMode,
   seating_config: null,
 };
@@ -176,6 +181,35 @@ function toSlug(text: string): string {
     .replace(/-+/g, '-')
     .substring(0, 80);
 }
+
+// ─── Seating Type Options ───────────────────────────────────────────────────
+const SEATING_OPTIONS: {
+  value: SeatingMode;
+  label: string;
+  description: string;
+  icon: typeof MapPin;
+}[] = [
+  {
+    value: 'general_admission',
+    label: 'General Admission',
+    description: 'No assigned seating. Customers buy tickets by tier.',
+    icon: LayoutGrid,
+  },
+  {
+    value: 'reserved_seating_list',
+    label: 'Assigned Seating',
+    description:
+      'Define seat ranges (e.g., A1-A19, B1-B12). Customers get specific seats.',
+    icon: List,
+  },
+  {
+    value: 'seatmap_pro',
+    label: 'Seat Map',
+    description:
+      'Draw zones on a venue image. Each zone is a pricing tier with its own price and quantity.',
+    icon: LayoutGrid,
+  },
+];
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function CreateEventWizard({
@@ -217,7 +251,7 @@ export default function CreateEventWizard({
         ticket_tiers:
           existingEvent.ticket_tiers.length > 0
             ? existingEvent.ticket_tiers
-            : [{ ...DEFAULT_TIER }],
+            : [makeDefaultTier('Adult'), makeDefaultTier('Child')],
         seating_type: (existingEvent as ExistingEvent & { seating_type?: SeatingMode }).seating_type || 'general_admission',
         seating_config: (existingEvent as ExistingEvent & { seating_config?: SeatingConfig }).seating_config || null,
       };
@@ -274,7 +308,7 @@ export default function CreateEventWizard({
       ...f,
       ticket_tiers: [
         ...f.ticket_tiers,
-        { ...DEFAULT_TIER, id: crypto.randomUUID() },
+        makeDefaultTier(''),
       ],
     }));
   };
@@ -332,6 +366,29 @@ export default function CreateEventWizard({
     );
   };
 
+  // Auto-generate tiers from seatmap zones when in seatmap_pro mode
+  const handleSeatingConfigChange = (config: SeatingConfig) => {
+    updateField('seating_config', config);
+
+    if (form.seating_type === 'seatmap_pro' && config.zones) {
+      const zoneTiers: TicketTier[] = config.zones.map((zone) => ({
+        id: zone.id,
+        name: zone.name,
+        description: zone.description || '',
+        price: zone.price || 0,
+        currency: zone.currency || form.currency,
+        initial_quantity: zone.initial_quantity || 100,
+        max_per_order: zone.max_per_order || 10,
+        sales_start_at: '',
+        sales_end_at: '',
+        is_hidden: false,
+      }));
+      if (zoneTiers.length > 0) {
+        setForm((f) => ({ ...f, seating_config: config, ticket_tiers: zoneTiers }));
+      }
+    }
+  };
+
   const validateStep = (s: number): boolean => {
     const errs: Record<string, string> = {};
     if (s === 0) {
@@ -367,29 +424,41 @@ export default function CreateEventWizard({
         if (!form.venue_name.trim()) errs.venue_name = 'Venue name is required';
         if (!form.address_text.trim()) errs.address_text = 'Full address is required';
         if (!form.city.trim()) errs.city = 'City is required';
-        if (!form.zip_code.trim()) errs.zip_code = 'Zip code is required';
+        if (!form.zip_code.trim()) errs.zip_code = 'Postal code is required';
       }
     }
     if (s === 2) {
-      if (form.seating_type !== 'general_admission') {
+      // Validate based on seating type
+      if (form.seating_type === 'seatmap_pro') {
+        // Seatmap Pro: validate zones
         if (!form.seating_config?.image_url) {
           errs.seating_image = 'Please upload a venue image';
         }
-        const items = form.seating_type === 'reserved_seating_list'
-          ? form.seating_config?.zones
-          : form.seating_config?.sections;
-        if (!items || items.length === 0) {
-          errs.seating_zones = 'Please draw at least one zone or section on the map';
+        const zones = form.seating_config?.zones;
+        if (!zones || zones.length === 0) {
+          errs.seating_zones = 'Please draw at least one zone on the map';
+        } else {
+          zones.forEach((zone, i) => {
+            if (!zone.name.trim()) errs[`zone_${i}_name`] = 'Zone name is required';
+            if ((zone.price ?? 0) < 0) errs[`zone_${i}_price`] = 'Price cannot be negative';
+            if ((zone.initial_quantity ?? 0) <= 0) errs[`zone_${i}_qty`] = 'Quantity must be > 0';
+          });
+        }
+      } else {
+        // GA or Assigned: validate tiers
+        form.ticket_tiers.forEach((tier, i) => {
+          if (!tier.name.trim()) errs[`tier_${i}_name`] = 'Tier name is required';
+          if (tier.initial_quantity <= 0) errs[`tier_${i}_qty`] = 'Must be > 0';
+          if (tier.price < 0) errs[`tier_${i}_price`] = 'Price cannot be negative';
+          if (!tier.max_per_order || tier.max_per_order < 1) errs[`tier_${i}_max`] = 'Must be >= 1';
+        });
+
+        if (form.seating_type === 'reserved_seating_list') {
+          if (!form.seating_config?.seat_ranges || form.seating_config.seat_ranges.length === 0) {
+            errs.seating_zones = 'Please define at least one seat range';
+          }
         }
       }
-    }
-    if (s === 3) {
-      form.ticket_tiers.forEach((tier, i) => {
-        if (!tier.name.trim()) errs[`tier_${i}_name`] = 'Tier name is required';
-        if (tier.initial_quantity <= 0) errs[`tier_${i}_qty`] = 'Must be > 0';
-        if (tier.price < 0) errs[`tier_${i}_price`] = 'Price cannot be negative';
-        if (!tier.max_per_order || tier.max_per_order < 1) errs[`tier_${i}_max`] = 'Must be >= 1';
-      });
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -606,31 +675,24 @@ export default function CreateEventWizard({
             />
           )}
           {step === 2 && (
-            <StepSeating
-              seatingType={form.seating_type}
-              seatingConfig={form.seating_config}
-              onSeatingTypeChange={(type) => updateField('seating_type', type)}
-              onSeatingConfigChange={(config) => updateField('seating_config', config)}
-              ticketTiers={form.ticket_tiers.map((t) => ({ id: t.id, name: t.name }))}
-            />
-          )}
-          {step === 3 && (
-            <StepTickets
+            <StepTicketsAndSeating
               form={form}
               errors={errors}
+              updateField={updateField}
               updateTier={updateTier}
               addTier={addTier}
               removeTier={removeTier}
+              onSeatingConfigChange={handleSeatingConfigChange}
             />
           )}
-          {step === 4 && (
+          {step === 3 && (
             <StepMedia
               form={form}
               updateField={updateField}
               setToast={setToast}
             />
           )}
-          {step === 5 && (
+          {step === 4 && (
             <StepReview form={form} categories={categories} />
           )}
         </div>
@@ -1352,20 +1414,20 @@ function StepDateVenue({
                   <Input
                     value={form.city}
                     onChange={(e) => updateField('city', e.target.value)}
-                    placeholder="e.g. Mumbai"
+                    placeholder="e.g. Toronto"
                     aria-invalid={!!errors.city}
                     className="h-11"
                   />
                 </FormField>
                 <FormField
-                  label="Zip Code"
+                  label="Postal Code"
                   error={errors.zip_code}
                   required
                 >
                   <Input
                     value={form.zip_code}
                     onChange={(e) => updateField('zip_code', e.target.value)}
-                    placeholder="e.g. 400001"
+                    placeholder="e.g. M5V 1J2"
                     aria-invalid={!!errors.zip_code}
                     className="h-11"
                   />
@@ -1378,8 +1440,9 @@ function StepDateVenue({
   );
 }
 
-// ─── Step 3: Tickets ────────────────────────────────────────────────────────
-function StepTickets({
+// ─── Step 3: Tickets & Seating (Combined) ───────────────────────────────────
+
+function TierCards({
   form,
   errors,
   updateTier,
@@ -1398,12 +1461,12 @@ function StepTickets({
 }) {
   return (
     <div>
-      <div className="mb-8 flex items-start justify-between">
+      <div className="mb-4 flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-foreground">
+          <h3 className="text-sm font-semibold text-foreground">
             Ticket Tiers
-          </h2>
-          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Create one or more ticket types. Set price to 0 for free tickets.
           </p>
         </div>
@@ -1543,6 +1606,210 @@ function StepTickets({
   );
 }
 
+function StepTicketsAndSeating({
+  form,
+  errors,
+  updateField,
+  updateTier,
+  addTier,
+  removeTier,
+  onSeatingConfigChange,
+}: {
+  form: EventFormData;
+  errors: Record<string, string>;
+  updateField: <K extends keyof EventFormData>(
+    key: K,
+    value: EventFormData[K]
+  ) => void;
+  updateTier: (
+    i: number,
+    field: keyof TicketTier,
+    value: string | number | boolean
+  ) => void;
+  addTier: () => void;
+  removeTier: (i: number) => void;
+  onSeatingConfigChange: (config: SeatingConfig) => void;
+}) {
+  const { uploading, error: uploadError, uploadImage } = useImageUpload();
+  const [imageUrl, setImageUrl] = useState(form.seating_config?.image_url ?? null);
+  const [imageWidth, setImageWidth] = useState(form.seating_config?.image_width ?? 0);
+  const [imageHeight, setImageHeight] = useState(form.seating_config?.image_height ?? 0);
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const result = await uploadImage(file);
+    if (result) {
+      setImageUrl(result.url);
+      setImageWidth(result.width);
+      setImageHeight(result.height);
+    }
+  }
+
+  return (
+    <div>
+      <SectionHeader
+        title="Tickets & Seating"
+        description="Configure your ticket tiers and choose a seating arrangement."
+      />
+
+      <div className="space-y-8">
+        {/* Seating Type Selector */}
+        <div>
+          <Label className="text-sm font-medium text-foreground mb-3 block">
+            Seating Type
+          </Label>
+          <div className="grid grid-cols-1 gap-3">
+            {SEATING_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`flex items-start gap-3 p-4 rounded-lg border text-left transition-colors ${
+                  form.seating_type === opt.value
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:border-primary/50'
+                }`}
+                onClick={() => updateField('seating_type', opt.value)}
+              >
+                <opt.icon
+                  className={`h-5 w-5 mt-0.5 ${
+                    form.seating_type === opt.value
+                      ? 'text-primary'
+                      : 'text-muted-foreground'
+                  }`}
+                />
+                <div>
+                  <div className="font-medium text-sm">{opt.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {opt.description}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* GA or Assigned: show TierCards */}
+        {form.seating_type !== 'seatmap_pro' && (
+          <TierCards
+            form={form}
+            errors={errors}
+            updateTier={updateTier}
+            addTier={addTier}
+            removeTier={removeTier}
+          />
+        )}
+
+        {/* Assigned Seating: also show SeatRangeEditor */}
+        {form.seating_type === 'reserved_seating_list' && (
+          <div>
+            <Separator className="mb-6" />
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-foreground">
+                Seat Ranges
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Define seat ranges and assign them to ticket tiers.
+              </p>
+            </div>
+            {errors.seating_zones && (
+              <p className="text-xs font-medium text-destructive mb-3">{errors.seating_zones}</p>
+            )}
+            <SeatRangeEditor
+              tiers={form.ticket_tiers.map((t) => ({ id: t.id, name: t.name }))}
+              initialConfig={form.seating_config}
+              onChange={onSeatingConfigChange}
+            />
+          </div>
+        )}
+
+        {/* Seatmap Pro: image upload + SeatmapDesigner (zones = tiers) */}
+        {form.seating_type === 'seatmap_pro' && (
+          <>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-1">
+                Zone-Based Pricing
+              </h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                Draw zones on your venue image. Each zone becomes a pricing tier with its own price, quantity, and color.
+              </p>
+            </div>
+
+            {errors.seating_image && (
+              <p className="text-xs font-medium text-destructive">{errors.seating_image}</p>
+            )}
+            {errors.seating_zones && (
+              <p className="text-xs font-medium text-destructive">{errors.seating_zones}</p>
+            )}
+
+            <div className="space-y-2">
+              <Label>Venue Image</Label>
+              {!imageUrl ? (
+                <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
+                  <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                  <span className="text-sm text-muted-foreground">
+                    {uploading ? 'Uploading...' : 'Click to upload venue image'}
+                  </span>
+                  <span className="text-xs text-muted-foreground mt-1">
+                    PNG, JPG, or WebP (max 5MB)
+                  </span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handleImageUpload}
+                    disabled={uploading}
+                  />
+                </label>
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <img
+                      src={imageUrl}
+                      alt="Venue"
+                      className="w-full h-40 object-cover rounded-lg"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="absolute top-2 right-2"
+                      onClick={() => {
+                        setImageUrl(null);
+                        setImageWidth(0);
+                        setImageHeight(0);
+                      }}
+                    >
+                      Change
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {uploadError && (
+                <p className="text-xs text-destructive">{uploadError}</p>
+              )}
+            </div>
+
+            {imageUrl && (
+              <SeatmapDesigner
+                mode="zone"
+                imageUrl={imageUrl}
+                imageWidth={imageWidth}
+                imageHeight={imageHeight}
+                initialConfig={form.seating_config ?? undefined}
+                onChange={onSeatingConfigChange}
+                currency={form.currency}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 import { uploadEventCoverImage, uploadEventGalleryImage } from '@/lib/actions';
 
 // ─── Step 4: Media ──────────────────────────────────────────────────────────
@@ -1633,8 +1900,6 @@ function StepMedia({
   };
 
   const removePhoto = (idx: number) => {
-    // In a full implementation, you'd also delete the image from Supabase Storage here.
-    // For now, we just remove it from the form state so it isn't linked to the event.
     updateField('photo_urls', form.photo_urls.filter((_, i) => i !== idx));
   };
 
@@ -1826,6 +2091,13 @@ function StepReview({
     0
   );
 
+  const seatingLabel =
+    form.seating_type === 'general_admission'
+      ? 'General Admission'
+      : form.seating_type === 'reserved_seating_list'
+        ? 'Assigned Seating'
+        : 'Seat Map (Zone-Based)';
+
   return (
     <div>
       <SectionHeader
@@ -1906,6 +2178,22 @@ function StepReview({
             <span>Total capacity</span>
             <span className="tabular-nums">{totalTickets}</span>
           </div>
+        </ReviewCard>
+
+        <ReviewCard title="Seating" icon={MapPin}>
+          <ReviewRow label="Type" value={seatingLabel} />
+          {form.seating_type === 'seatmap_pro' && form.seating_config?.zones && (
+            <ReviewRow
+              label="Zones"
+              value={`${form.seating_config.zones.length} zone${form.seating_config.zones.length !== 1 ? 's' : ''}`}
+            />
+          )}
+          {form.seating_type === 'reserved_seating_list' && form.seating_config?.seat_ranges && (
+            <ReviewRow
+              label="Seat Ranges"
+              value={`${form.seating_config.seat_ranges.length} range${form.seating_config.seat_ranges.length !== 1 ? 's' : ''}`}
+            />
+          )}
         </ReviewCard>
 
         {form.cover_image_url && (

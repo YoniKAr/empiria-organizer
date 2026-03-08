@@ -14,7 +14,7 @@ import {
   type TPointerEventInfo,
 } from "fabric";
 import { Toolbar } from "./Toolbar";
-import { ZonePropertiesPanel } from "./ZonePropertiesPanel";
+import { ZonePropertiesPanel, ZONE_COLORS } from "./ZonePropertiesPanel";
 import { SeatPlacer } from "./SeatPlacer";
 import type { DrawingTool } from "./types";
 import type {
@@ -50,6 +50,7 @@ interface SeatmapDesignerProps {
   imageHeight: number;
   initialConfig?: SeatingConfig;
   onChange: (config: SeatingConfig) => void;
+  currency?: string;
 }
 
 interface PolygonState {
@@ -63,21 +64,22 @@ interface ZoneState {
   color: string;
   polygons: PolygonState[];
   seats: SeatDefinition[]; // aggregated across all polygons
+  price: number;
+  initial_quantity: number;
+  max_per_order: number;
+  description: string;
+  currency: string;
 }
 
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 
-const ZONE_COLORS = [
-  "#3b82f6",
-  "#ef4444",
-  "#22c55e",
-  "#f59e0b",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-];
+function getNextAvailableColor(usedColors: string[]): string {
+  const available = ZONE_COLORS.filter((c) => !usedColors.includes(c));
+  if (available.length > 0) return available[0];
+  // Fallback: random hex
+  return "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0");
+}
 
 export function SeatmapDesigner({
   mode,
@@ -86,6 +88,7 @@ export function SeatmapDesigner({
   imageHeight,
   initialConfig,
   onChange,
+  currency = "cad",
 }: SeatmapDesignerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<Canvas | null>(null);
@@ -226,10 +229,15 @@ export function SeatmapDesigner({
         .filter((z) => zonePolygonsMap.has(z.id))
         .map((z) => ({
           id: z.id,
-          tier_id: "",
+          tier_id: z.id,
           name: z.name,
           color: z.color,
           polygons: zonePolygonsMap.get(z.id) || [],
+          price: z.price,
+          initial_quantity: z.initial_quantity,
+          max_per_order: z.max_per_order,
+          description: z.description,
+          currency: z.currency,
         }));
 
       onChange({
@@ -398,8 +406,8 @@ export function SeatmapDesigner({
         // Create new zone
         zoneCounterRef.current += 1;
         const id = crypto.randomUUID();
-        const color =
-          ZONE_COLORS[zoneCounterRef.current % ZONE_COLORS.length];
+        const usedColors = zonesRef.current.map((z) => z.color);
+        const color = getNextAvailableColor(usedColors);
 
         polygon.set({
           fill: color + "40",
@@ -417,6 +425,11 @@ export function SeatmapDesigner({
           color,
           polygons: [{ id: polygonId, seats: [] }],
           seats: [],
+          price: 0,
+          initial_quantity: 100,
+          max_per_order: 10,
+          description: "",
+          currency,
         };
 
         setZones((prev) => [...prev, newZone]);
@@ -519,7 +532,8 @@ export function SeatmapDesigner({
     } else {
       zoneCounterRef.current += 1;
       const id = crypto.randomUUID();
-      const color = ZONE_COLORS[zoneCounterRef.current % ZONE_COLORS.length];
+      const usedColors = zonesRef.current.map((z) => z.color);
+      const color = getNextAvailableColor(usedColors);
 
       rect.set({
         fill: color + "40",
@@ -537,6 +551,11 @@ export function SeatmapDesigner({
         color,
         polygons: [{ id: polygonId, seats: [] }],
         seats: [],
+        price: 0,
+        initial_quantity: 100,
+        max_per_order: 10,
+        description: "",
+        currency,
       };
 
       setZones((prev) => [...prev, newZone]);
@@ -547,21 +566,26 @@ export function SeatmapDesigner({
     syncConfig();
   }
 
-  function handleUpdateZone(id: string, name: string, color: string) {
+  function handleUpdateZone(id: string, updates: Record<string, string | number>) {
     setZones((prev) =>
-      prev.map((z) => (z.id === id ? { ...z, name, color } : z))
+      prev.map((z) => (z.id === id ? { ...z, ...updates } : z))
     );
 
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-
-    canvas.forEachObject((obj) => {
-      const d = getObjData(obj);
-      if (d?.zoneId === id && !d.seatId && !d.isSeatLabel) {
-        obj.set({ fill: color + "40", stroke: color });
+    // If color changed, update canvas objects
+    if (updates.color) {
+      const canvas = fabricRef.current;
+      if (canvas) {
+        const newColor = updates.color as string;
+        canvas.forEachObject((obj) => {
+          const d = getObjData(obj);
+          if (d?.zoneId === id && !d.seatId && !d.isSeatLabel) {
+            obj.set({ fill: newColor + "40", stroke: newColor });
+          }
+        });
+        canvas.renderAll();
       }
-    });
-    canvas.renderAll();
+    }
+
     syncConfig();
   }
 
@@ -772,6 +796,7 @@ export function SeatmapDesigner({
           <ZonePropertiesPanel
             selectedZoneId={selectedZoneId}
             zones={zones}
+            usedColors={zones.map((z) => z.color)}
             onUpdateZone={handleUpdateZone}
           />
 

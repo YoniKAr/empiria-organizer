@@ -14,6 +14,16 @@ export interface ToolbarProps {
 
 export interface ZonePropertiesPanelProps {
   selectedZoneId: string | null;
-  zones: Array<{ id: string; name: string; color: string }>;
-  onUpdateZone: (id: string, name: string, color: string) => void;
+  zones: Array<{
+    id: string;
+    name: string;
+    color: string;
+    price: number;
+    initial_quantity: number;
+    max_per_order: number;
+    description: string;
+    currency: string;
+  }>;
+  usedColors: string[];
+  onUpdateZone: (id: string, updates: Record<string, string | number>) => void;
 }
