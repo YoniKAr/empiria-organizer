@@ -21,6 +21,7 @@ import type {
   SeatingConfig,
   ZoneDefinition,
   ZonePolygon,
+  ZoneTier,
   SectionDefinition,
   SeatDefinition,
   MapSubMode,
@@ -61,17 +62,23 @@ interface PolygonState {
   seats: SeatDefinition[];
 }
 
+interface ZoneTierState {
+  id: string;
+  name: string;
+  price: number;
+  initial_quantity: number;
+  max_per_order: number;
+  description: string;
+  currency: string;
+}
+
 interface ZoneState {
   id: string;
   name: string;
   color: string;
   polygons: PolygonState[];
   seats: SeatDefinition[]; // aggregated across all polygons
-  price: number;
-  initial_quantity: number;
-  max_per_order: number;
-  description: string;
-  currency: string;
+  tiers: ZoneTierState[];
 }
 
 const CANVAS_WIDTH = 800;
@@ -238,18 +245,32 @@ export function SeatmapDesigner({
 
       const zoneDefs: ZoneDefinition[] = currentZones
         .filter((z) => zonePolygonsMap.has(z.id))
-        .map((z) => ({
-          id: z.id,
-          tier_id: z.id,
-          name: z.name,
-          color: z.color,
-          polygons: zonePolygonsMap.get(z.id) || [],
-          price: z.price,
-          initial_quantity: z.initial_quantity,
-          max_per_order: z.max_per_order,
-          description: z.description,
-          currency: z.currency,
-        }));
+        .map((z) => {
+          const tiers: ZoneTier[] = z.tiers.map((t) => ({
+            id: t.id,
+            name: t.name,
+            price: t.price,
+            initial_quantity: t.initial_quantity,
+            max_per_order: t.max_per_order,
+            description: t.description,
+            currency: t.currency,
+          }));
+          // Use first tier as legacy fallback fields
+          const firstTier = z.tiers[0];
+          return {
+            id: z.id,
+            tier_id: firstTier?.id ?? z.id,
+            name: z.name,
+            color: z.color,
+            polygons: zonePolygonsMap.get(z.id) || [],
+            tiers,
+            price: firstTier?.price ?? 0,
+            initial_quantity: z.tiers.reduce((sum, t) => sum + t.initial_quantity, 0),
+            max_per_order: firstTier?.max_per_order ?? 10,
+            description: firstTier?.description ?? "",
+            currency: firstTier?.currency ?? "cad",
+          };
+        });
 
       onChange({
         image_url: imageUrl,
@@ -437,11 +458,15 @@ export function SeatmapDesigner({
           color,
           polygons: [{ id: polygonId, seats: [] }],
           seats: [],
-          price: 0,
-          initial_quantity: 100,
-          max_per_order: 10,
-          description: "",
-          currency,
+          tiers: [{
+            id: crypto.randomUUID(),
+            name: "General",
+            price: 0,
+            initial_quantity: 100,
+            max_per_order: 10,
+            description: "",
+            currency,
+          }],
         };
 
         setZones((prev) => [...prev, newZone]);
@@ -563,11 +588,15 @@ export function SeatmapDesigner({
         color,
         polygons: [{ id: polygonId, seats: [] }],
         seats: [],
-        price: 0,
-        initial_quantity: 100,
-        max_per_order: 10,
-        description: "",
-        currency,
+        tiers: [{
+          id: crypto.randomUUID(),
+          name: "General",
+          price: 0,
+          initial_quantity: 100,
+          max_per_order: 10,
+          description: "",
+          currency,
+        }],
       };
 
       setZones((prev) => [...prev, newZone]);
@@ -578,7 +607,7 @@ export function SeatmapDesigner({
     syncConfig();
   }
 
-  function handleUpdateZone(id: string, updates: Record<string, string | number>) {
+  function handleUpdateZone(id: string, updates: Record<string, unknown>) {
     setZones((prev) =>
       prev.map((z) => (z.id === id ? { ...z, ...updates } : z))
     );
@@ -598,6 +627,51 @@ export function SeatmapDesigner({
       }
     }
 
+    syncConfig();
+  }
+
+  function handleAddZoneTier(zoneId: string) {
+    setZones((prev) =>
+      prev.map((z) => {
+        if (z.id !== zoneId) return z;
+        const newTier: ZoneTierState = {
+          id: crypto.randomUUID(),
+          name: "",
+          price: 0,
+          initial_quantity: 50,
+          max_per_order: 10,
+          description: "",
+          currency: z.tiers[0]?.currency || currency,
+        };
+        return { ...z, tiers: [...z.tiers, newTier] };
+      })
+    );
+    syncConfig();
+  }
+
+  function handleRemoveZoneTier(zoneId: string, tierId: string) {
+    setZones((prev) =>
+      prev.map((z) => {
+        if (z.id !== zoneId) return z;
+        if (z.tiers.length <= 1) return z; // always keep at least one
+        return { ...z, tiers: z.tiers.filter((t) => t.id !== tierId) };
+      })
+    );
+    syncConfig();
+  }
+
+  function handleUpdateZoneTier(zoneId: string, tierId: string, updates: Record<string, string | number>) {
+    setZones((prev) =>
+      prev.map((z) => {
+        if (z.id !== zoneId) return z;
+        return {
+          ...z,
+          tiers: z.tiers.map((t) =>
+            t.id === tierId ? { ...t, ...updates } : t
+          ),
+        };
+      })
+    );
     syncConfig();
   }
 
@@ -739,11 +813,15 @@ export function SeatmapDesigner({
     setZones((prev) =>
       prev.map((z) => {
         if (z.id !== selectedZoneId) return z;
-        // Also store seats in the first polygon and update quantity
+        // Store seats in the first polygon
         const updatedPolygons = z.polygons.map((p, i) =>
           i === 0 ? { ...p, seats } : p
         );
-        return { ...z, seats, initial_quantity: seats.length, polygons: updatedPolygons };
+        // Distribute seat count across tiers (set total on first tier if single tier)
+        const updatedTiers = z.tiers.length === 1
+          ? z.tiers.map((t) => ({ ...t, initial_quantity: seats.length }))
+          : z.tiers;
+        return { ...z, seats, polygons: updatedPolygons, tiers: updatedTiers };
       })
     );
     syncConfig();
@@ -815,6 +893,9 @@ export function SeatmapDesigner({
             zones={zones}
             usedColors={zones.map((z) => z.color)}
             onUpdateZone={handleUpdateZone}
+            onAddZoneTier={handleAddZoneTier}
+            onRemoveZoneTier={handleRemoveZoneTier}
+            onUpdateZoneTier={handleUpdateZoneTier}
             seatMode={showSeatPlacer}
           />
 
@@ -865,6 +946,11 @@ export function SeatmapDesigner({
                       {z.polygons.length > 1 && (
                         <span className="text-xs text-muted-foreground">
                           ({z.polygons.length})
+                        </span>
+                      )}
+                      {z.tiers.length > 1 && (
+                        <span className="text-xs text-muted-foreground">
+                          {z.tiers.length}T
                         </span>
                       )}
                       {(mode === "seat" || showSeatPlacer) && z.seats.length > 0 && (

@@ -396,36 +396,50 @@ export default function CreateEventWizard({
     );
   };
 
-  // Auto-generate tiers from seatmap zones when in seatmap_pro mode
+  // Auto-generate ticket tiers from seatmap zone tiers when in seatmap_pro mode
   const handleSeatingConfigChange = (config: SeatingConfig) => {
     updateField('seating_config', config);
 
     if (form.seating_type === 'seatmap_pro' && config.zones) {
-      const zoneTiers: TicketTier[] = config.zones.map((zone) => {
-        // For individual seating mode, calculate quantity from total seats across polygons
-        let quantity = zone.initial_quantity || 100;
-        if (config.map_sub_mode === 'individual_seating') {
-          const totalSeats = (zone.polygons || []).reduce(
-            (sum, p) => sum + (p.seats?.length || 0),
-            0
-          );
-          if (totalSeats > 0) quantity = totalSeats;
+      const ticketTiers: TicketTier[] = [];
+
+      for (const zone of config.zones) {
+        const zoneTiers = zone.tiers && zone.tiers.length > 0
+          ? zone.tiers
+          : [{ id: zone.id, name: zone.name, price: zone.price || 0, initial_quantity: zone.initial_quantity || 100, max_per_order: zone.max_per_order || 10, description: zone.description || '', currency: zone.currency || form.currency }];
+
+        for (const zt of zoneTiers) {
+          // For individual seating, spread seat count across tiers proportionally
+          let quantity = zt.initial_quantity;
+          if (config.map_sub_mode === 'individual_seating' && zoneTiers.length === 1) {
+            const totalSeats = (zone.polygons || []).reduce(
+              (sum, p) => sum + (p.seats?.length || 0), 0
+            );
+            if (totalSeats > 0) quantity = totalSeats;
+          }
+
+          // If zone has multiple tiers, prefix with zone name
+          const tierName = zoneTiers.length > 1
+            ? `${zone.name} — ${zt.name}`
+            : zone.name;
+
+          ticketTiers.push({
+            id: zt.id,
+            name: tierName,
+            description: zt.description || '',
+            price: zt.price || 0,
+            currency: zt.currency || form.currency,
+            initial_quantity: quantity,
+            max_per_order: zt.max_per_order || 10,
+            sales_start_at: '',
+            sales_end_at: '',
+            is_hidden: false,
+          });
         }
-        return {
-          id: zone.id,
-          name: zone.name,
-          description: zone.description || '',
-          price: zone.price || 0,
-          currency: zone.currency || form.currency,
-          initial_quantity: quantity,
-          max_per_order: zone.max_per_order || 10,
-          sales_start_at: '',
-          sales_end_at: '',
-          is_hidden: false,
-        };
-      });
-      if (zoneTiers.length > 0) {
-        setForm((f) => ({ ...f, seating_config: config, ticket_tiers: zoneTiers }));
+      }
+
+      if (ticketTiers.length > 0) {
+        setForm((f) => ({ ...f, seating_config: config, ticket_tiers: ticketTiers }));
       }
     }
   };
@@ -482,8 +496,14 @@ export default function CreateEventWizard({
         } else {
           zones.forEach((zone, i) => {
             if (!zone.name.trim()) errs[`zone_${i}_name`] = 'Zone name is required';
-            if ((zone.price ?? 0) < 0) errs[`zone_${i}_price`] = 'Price cannot be negative';
-            if ((zone.initial_quantity ?? 0) <= 0) errs[`zone_${i}_qty`] = 'Quantity must be > 0';
+            const zoneTiers = zone.tiers && zone.tiers.length > 0
+              ? zone.tiers
+              : [{ price: zone.price ?? 0, initial_quantity: zone.initial_quantity ?? 0, name: zone.name }];
+            zoneTiers.forEach((zt, j) => {
+              if (!zt.name?.trim()) errs[`zone_${i}_tier_${j}_name`] = 'Tier name is required';
+              if ((zt.price ?? 0) < 0) errs[`zone_${i}_tier_${j}_price`] = 'Price cannot be negative';
+              if ((zt.initial_quantity ?? 0) <= 0) errs[`zone_${i}_tier_${j}_qty`] = 'Quantity must be > 0';
+            });
             if (isIndividualSeating) {
               const totalSeats = (zone.polygons || []).reduce(
                 (sum, p) => sum + (p.seats?.length || 0), 0
@@ -1930,8 +1950,8 @@ function StepTicketsAndSeating({
                   />
                 </div>
 
-                {/* Generated Tiers Summary */}
-                {form.ticket_tiers.length > 0 && (
+                {/* Generated Tiers Summary (grouped by zone) */}
+                {form.seating_config?.zones && form.seating_config.zones.length > 0 && (
                   <div className="rounded-xl border border-border bg-card p-5">
                     <div className="flex items-center gap-2 mb-4">
                       <Ticket className="size-4 text-primary" />
@@ -1940,41 +1960,48 @@ function StepTicketsAndSeating({
                       </h3>
                     </div>
                     <p className="text-xs text-muted-foreground mb-4">
-                      These tiers are auto-generated from the zones you drew. Edit pricing and details in the zone properties panel above.
+                      Tiers are auto-generated from zones. Each zone can have multiple ticket types. Edit in the zone properties panel.
                     </p>
-                    <div className="space-y-2">
-                      {form.ticket_tiers.map((tier) => {
-                        const zoneColor = form.seating_config?.zones?.find(z => z.id === tier.id)?.color;
+                    <div className="space-y-3">
+                      {form.seating_config.zones.map((zone) => {
+                        const zoneTiers = zone.tiers && zone.tiers.length > 0
+                          ? zone.tiers
+                          : [{ id: zone.id, name: zone.name, price: zone.price || 0, initial_quantity: zone.initial_quantity || 0 }];
                         return (
-                          <div
-                            key={tier.id}
-                            className="flex items-center justify-between rounded-lg border border-border px-4 py-3"
-                          >
-                            <div className="flex items-center gap-3">
-                              {zoneColor && (
-                                <span
-                                  className="size-3 rounded-full shrink-0"
-                                  style={{ backgroundColor: zoneColor }}
-                                />
-                              )}
-                              <div>
-                                <span className="text-sm font-medium text-foreground">
-                                  {tier.name || 'Unnamed Zone'}
-                                </span>
-                                {tier.description && (
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {tier.description}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-sm font-semibold text-foreground tabular-nums">
-                                {tier.price === 0 ? 'Free' : `$${tier.price.toFixed(2)}`}
+                          <div key={zone.id}>
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span
+                                className="size-3 rounded-full shrink-0"
+                                style={{ backgroundColor: zone.color }}
+                              />
+                              <span className="text-sm font-medium text-foreground">
+                                {zone.name || 'Unnamed Zone'}
                               </span>
-                              <p className="text-xs text-muted-foreground tabular-nums">
-                                {tier.initial_quantity} {mapSubMode === 'individual_seating' ? 'seats' : 'tickets'}
-                              </p>
+                              {zoneTiers.length > 1 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  ({zoneTiers.length} tiers)
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-1 ml-5">
+                              {zoneTiers.map((zt) => (
+                                <div
+                                  key={zt.id}
+                                  className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2"
+                                >
+                                  <span className="text-xs text-muted-foreground">
+                                    {zt.name || 'Unnamed'}
+                                  </span>
+                                  <div className="text-right">
+                                    <span className="text-xs font-semibold text-foreground tabular-nums">
+                                      {zt.price === 0 ? 'Free' : `$${zt.price.toFixed(2)}`}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground tabular-nums ml-2">
+                                      {zt.initial_quantity} {mapSubMode === 'individual_seating' ? 'seats' : 'qty'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         );
@@ -2374,10 +2401,18 @@ function StepReview({
         <ReviewCard title="Seating" icon={MapPin}>
           <ReviewRow label="Type" value={seatingLabel} />
           {form.seating_type === 'seatmap_pro' && form.seating_config?.zones && (
-            <ReviewRow
-              label="Zones"
-              value={`${form.seating_config.zones.length} zone${form.seating_config.zones.length !== 1 ? 's' : ''}`}
-            />
+            <>
+              <ReviewRow
+                label="Zones"
+                value={`${form.seating_config.zones.length} zone${form.seating_config.zones.length !== 1 ? 's' : ''}`}
+              />
+              {form.seating_config.zones.some((z) => z.tiers && z.tiers.length > 1) && (
+                <ReviewRow
+                  label="Multi-tier zones"
+                  value={`${form.seating_config.zones.filter((z) => z.tiers && z.tiers.length > 1).length}`}
+                />
+              )}
+            </>
           )}
           {form.seating_type === 'reserved_seating_list' && form.seating_config?.seat_ranges && (
             <ReviewRow

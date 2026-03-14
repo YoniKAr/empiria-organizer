@@ -15,7 +15,8 @@ export interface ZoneDefinition {
   name: string;
   color: string;
   polygons: ZonePolygon[]; // multi-polygon support
-  // Zone-based pricing (seatmap_pro)
+  tiers?: ZoneTier[]; // multiple pricing tiers per zone
+  // Legacy single-tier fields (used when tiers array is empty/absent)
   price?: number;
   initial_quantity?: number;
   max_per_order?: number;
@@ -28,6 +29,17 @@ export interface SeatDefinition {
   label: string;
   x: number;
   y: number;
+}
+
+// Tiers within a zone (e.g. Adult, Child, VIP for the same physical area)
+export interface ZoneTier {
+  id: string;
+  name: string;
+  price: number;
+  initial_quantity: number;
+  max_per_order: number;
+  description: string;
+  currency: string;
 }
 
 export interface SectionDefinition {

@@ -12,20 +12,29 @@ export interface ToolbarProps {
   onCancelAddToZone?: () => void;
 }
 
+export interface ZoneTierItem {
+  id: string;
+  name: string;
+  price: number;
+  initial_quantity: number;
+  max_per_order: number;
+  description: string;
+  currency: string;
+}
+
 export interface ZonePropertiesPanelProps {
   selectedZoneId: string | null;
   zones: Array<{
     id: string;
     name: string;
     color: string;
-    price: number;
-    initial_quantity: number;
-    max_per_order: number;
-    description: string;
-    currency: string;
+    tiers: ZoneTierItem[];
     seats: Array<{ id: string; label: string; x: number; y: number }>;
   }>;
   usedColors: string[];
-  onUpdateZone: (id: string, updates: Record<string, string | number>) => void;
+  onUpdateZone: (id: string, updates: Record<string, unknown>) => void;
+  onAddZoneTier: (zoneId: string) => void;
+  onRemoveZoneTier: (zoneId: string, tierId: string) => void;
+  onUpdateZoneTier: (zoneId: string, tierId: string, updates: Record<string, string | number>) => void;
   seatMode?: boolean;
 }
