@@ -23,6 +23,7 @@ import type {
   ZonePolygon,
   SectionDefinition,
   SeatDefinition,
+  MapSubMode,
 } from "@/lib/seatmap-types";
 
 // Fabric.js v6 supports a `data` property at runtime but doesn't include it in TS types.
@@ -51,6 +52,8 @@ interface SeatmapDesignerProps {
   initialConfig?: SeatingConfig;
   onChange: (config: SeatingConfig) => void;
   currency?: string;
+  showSeatPlacer?: boolean;
+  mapSubMode?: MapSubMode;
 }
 
 interface PolygonState {
@@ -89,6 +92,8 @@ export function SeatmapDesigner({
   initialConfig,
   onChange,
   currency = "cad",
+  showSeatPlacer = false,
+  mapSubMode,
 }: SeatmapDesignerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<Canvas | null>(null);
@@ -219,9 +224,15 @@ export function SeatmapDesigner({
         if (!zonePolygonsMap.has(d.zoneId)) {
           zonePolygonsMap.set(d.zoneId, []);
         }
+
+        // Find seats for this polygon from zone state
+        const zone = currentZones.find((z) => z.id === d.zoneId);
+        const polygonSeats = zone?.polygons.find((p) => p.id === d.polygonId)?.seats || [];
+
         zonePolygonsMap.get(d.zoneId)!.push({
           id: d.polygonId,
           points,
+          seats: polygonSeats.length > 0 ? polygonSeats : undefined,
         });
       }
 
@@ -245,6 +256,7 @@ export function SeatmapDesigner({
         image_width: imageWidth,
         image_height: imageHeight,
         view_mode: "image_overlay",
+        map_sub_mode: mapSubMode,
         zones: zoneDefs,
       });
     } else {
@@ -280,7 +292,7 @@ export function SeatmapDesigner({
         sections: sectionDefs,
       });
     }
-  }, [imageUrl, imageWidth, imageHeight, mode, onChange]);
+  }, [imageUrl, imageWidth, imageHeight, mode, mapSubMode, onChange]);
 
   // Listen for object modifications to sync config
   useEffect(() => {
@@ -725,9 +737,14 @@ export function SeatmapDesigner({
     canvas.renderAll();
 
     setZones((prev) =>
-      prev.map((z) =>
-        z.id === selectedZoneId ? { ...z, seats } : z
-      )
+      prev.map((z) => {
+        if (z.id !== selectedZoneId) return z;
+        // Also store seats in the first polygon and update quantity
+        const updatedPolygons = z.polygons.map((p, i) =>
+          i === 0 ? { ...p, seats } : p
+        );
+        return { ...z, seats, initial_quantity: seats.length, polygons: updatedPolygons };
+      })
     );
     syncConfig();
   }
@@ -798,9 +815,10 @@ export function SeatmapDesigner({
             zones={zones}
             usedColors={zones.map((z) => z.color)}
             onUpdateZone={handleUpdateZone}
+            seatMode={showSeatPlacer}
           />
 
-          {mode === "seat" && selectedZoneId && selectedZone && (
+          {(mode === "seat" || showSeatPlacer) && selectedZoneId && selectedZone && (
             <SeatPlacer
               sectionId={selectedZoneId}
               seats={selectedZone.seats}
@@ -849,7 +867,7 @@ export function SeatmapDesigner({
                           ({z.polygons.length})
                         </span>
                       )}
-                      {mode === "seat" && z.seats.length > 0 && (
+                      {(mode === "seat" || showSeatPlacer) && z.seats.length > 0 && (
                         <span className="ml-auto text-xs text-muted-foreground">
                           {z.seats.length} seats
                         </span>

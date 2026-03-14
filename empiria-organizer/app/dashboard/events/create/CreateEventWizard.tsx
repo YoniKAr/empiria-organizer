@@ -25,6 +25,9 @@ import {
   Search,
   LayoutGrid,
   List,
+  Map,
+  Grid3X3,
+  Armchair,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/button';
@@ -46,7 +49,7 @@ import { useRouter } from 'next/navigation';
 import { SeatmapDesigner } from '@/components/seatmap/SeatmapDesigner';
 import { SeatRangeEditor } from '@/components/seatmap/SeatRangeEditor';
 import { useImageUpload } from '@/components/seatmap/useImageUpload';
-import type { SeatingMode, SeatingConfig } from '@/lib/seatmap-types';
+import type { SeatingMode, SeatingConfig, MapSubMode } from '@/lib/seatmap-types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface TicketTier {
@@ -192,22 +195,42 @@ const SEATING_OPTIONS: {
   {
     value: 'general_admission',
     label: 'General Admission',
-    description: 'No assigned seating. Customers buy tickets by tier.',
-    icon: LayoutGrid,
+    description: 'No assigned seating. Customers buy tickets by tier (e.g. VIP, Regular, Student).',
+    icon: Users,
   },
   {
     value: 'reserved_seating_list',
-    label: 'Assigned Seating',
+    label: 'Assigned Seating (No Map)',
     description:
-      'Define seat ranges (e.g., A1-A19, B1-B12). Customers get specific seats.',
+      'Define seat ranges (e.g. A1-A20, B1-B30) and link to tiers. Customers get specific seats without a visual map.',
     icon: List,
   },
   {
     value: 'seatmap_pro',
-    label: 'Seat Map',
+    label: 'Map-Based Seating',
     description:
-      'Draw zones on a venue image. Each zone is a pricing tier with its own price and quantity.',
+      'Upload a venue image and draw zones. Full visual seat map with zone-based or individual seat pricing.',
+    icon: Map,
+  },
+];
+
+const MAP_SUB_MODES: {
+  value: MapSubMode;
+  label: string;
+  description: string;
+  icon: typeof MapPin;
+}[] = [
+  {
+    value: 'zone_only',
+    label: 'Zone Only',
+    description: 'Draw zones with pricing. Each zone = a tier with a set quantity. Customers pick a zone.',
     icon: LayoutGrid,
+  },
+  {
+    value: 'individual_seating',
+    label: 'Individual Seating + Zone',
+    description: 'Draw zones and place individual seats within each zone. Customers pick a specific seat.',
+    icon: Armchair,
   },
 ];
 
@@ -378,18 +401,29 @@ export default function CreateEventWizard({
     updateField('seating_config', config);
 
     if (form.seating_type === 'seatmap_pro' && config.zones) {
-      const zoneTiers: TicketTier[] = config.zones.map((zone) => ({
-        id: zone.id,
-        name: zone.name,
-        description: zone.description || '',
-        price: zone.price || 0,
-        currency: zone.currency || form.currency,
-        initial_quantity: zone.initial_quantity || 100,
-        max_per_order: zone.max_per_order || 10,
-        sales_start_at: '',
-        sales_end_at: '',
-        is_hidden: false,
-      }));
+      const zoneTiers: TicketTier[] = config.zones.map((zone) => {
+        // For individual seating mode, calculate quantity from total seats across polygons
+        let quantity = zone.initial_quantity || 100;
+        if (config.map_sub_mode === 'individual_seating') {
+          const totalSeats = (zone.polygons || []).reduce(
+            (sum, p) => sum + (p.seats?.length || 0),
+            0
+          );
+          if (totalSeats > 0) quantity = totalSeats;
+        }
+        return {
+          id: zone.id,
+          name: zone.name,
+          description: zone.description || '',
+          price: zone.price || 0,
+          currency: zone.currency || form.currency,
+          initial_quantity: quantity,
+          max_per_order: zone.max_per_order || 10,
+          sales_start_at: '',
+          sales_end_at: '',
+          is_hidden: false,
+        };
+      });
       if (zoneTiers.length > 0) {
         setForm((f) => ({ ...f, seating_config: config, ticket_tiers: zoneTiers }));
       }
@@ -442,6 +476,7 @@ export default function CreateEventWizard({
           errs.seating_image = 'Please upload a venue image';
         }
         const zones = form.seating_config?.zones;
+        const isIndividualSeating = form.seating_config?.map_sub_mode === 'individual_seating';
         if (!zones || zones.length === 0) {
           errs.seating_zones = 'Please draw at least one zone on the map';
         } else {
@@ -449,6 +484,12 @@ export default function CreateEventWizard({
             if (!zone.name.trim()) errs[`zone_${i}_name`] = 'Zone name is required';
             if ((zone.price ?? 0) < 0) errs[`zone_${i}_price`] = 'Price cannot be negative';
             if ((zone.initial_quantity ?? 0) <= 0) errs[`zone_${i}_qty`] = 'Quantity must be > 0';
+            if (isIndividualSeating) {
+              const totalSeats = (zone.polygons || []).reduce(
+                (sum, p) => sum + (p.seats?.length || 0), 0
+              );
+              if (totalSeats === 0) errs[`zone_${i}_seats`] = 'Generate seats for this zone';
+            }
           });
         }
       } else {
@@ -1652,6 +1693,9 @@ function StepTicketsAndSeating({
   const [imageUrl, setImageUrl] = useState(form.seating_config?.image_url ?? null);
   const [imageWidth, setImageWidth] = useState(form.seating_config?.image_width ?? 0);
   const [imageHeight, setImageHeight] = useState(form.seating_config?.image_height ?? 0);
+  const [mapSubMode, setMapSubMode] = useState<MapSubMode>(
+    form.seating_config?.map_sub_mode ?? 'zone_only'
+  );
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1665,41 +1709,51 @@ function StepTicketsAndSeating({
     }
   }
 
+  function handleMapSubModeChange(subMode: MapSubMode) {
+    setMapSubMode(subMode);
+    // Persist sub-mode in seating config
+    if (form.seating_config) {
+      onSeatingConfigChange({ ...form.seating_config, map_sub_mode: subMode });
+    }
+  }
+
   return (
     <div>
       <SectionHeader
         title="Tickets & Seating"
-        description="Configure your ticket tiers and choose a seating arrangement."
+        description="Choose a seating arrangement and configure your ticket tiers."
       />
 
       <div className="space-y-8">
-        {/* Seating Type Selector */}
+        {/* ─── Seating Mode Selector ─────────────────────────────────────── */}
         <div>
           <Label className="text-sm font-medium text-foreground mb-3 block">
-            Seating Type
+            Seating Mode
           </Label>
           <div className="grid grid-cols-1 gap-3">
             {SEATING_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
-                className={`flex items-start gap-3 p-4 rounded-lg border text-left transition-colors ${
+                className={cn(
+                  'flex items-start gap-3 p-4 rounded-xl border text-left transition-all',
                   form.seating_type === opt.value
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/50'
-                }`}
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'border-border hover:border-primary/40 hover:bg-muted/30'
+                )}
                 onClick={() => updateField('seating_type', opt.value)}
               >
-                <opt.icon
-                  className={`h-5 w-5 mt-0.5 ${
-                    form.seating_type === opt.value
-                      ? 'text-primary'
-                      : 'text-muted-foreground'
-                  }`}
-                />
+                <div className={cn(
+                  'flex size-9 shrink-0 items-center justify-center rounded-lg',
+                  form.seating_type === opt.value
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-muted text-muted-foreground'
+                )}>
+                  <opt.icon className="size-4.5" />
+                </div>
                 <div>
                   <div className="font-medium text-sm">{opt.label}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground mt-0.5">
                     {opt.description}
                   </div>
                 </div>
@@ -1708,10 +1762,47 @@ function StepTicketsAndSeating({
           </div>
         </div>
 
+        {/* ─── Map-Based Sub-Mode Selector ──────────────────────────────── */}
+        {form.seating_type === 'seatmap_pro' && (
+          <div>
+            <Label className="text-sm font-medium text-foreground mb-3 block">
+              Map Mode
+            </Label>
+            <div className="grid grid-cols-2 gap-3">
+              {MAP_SUB_MODES.map((sub) => (
+                <button
+                  key={sub.value}
+                  type="button"
+                  className={cn(
+                    'flex flex-col items-center gap-2 p-4 rounded-xl border text-center transition-all',
+                    mapSubMode === sub.value
+                      ? 'border-primary bg-primary/5 shadow-sm'
+                      : 'border-border hover:border-primary/40 hover:bg-muted/30'
+                  )}
+                  onClick={() => handleMapSubModeChange(sub.value)}
+                >
+                  <div className={cn(
+                    'flex size-9 items-center justify-center rounded-lg',
+                    mapSubMode === sub.value
+                      ? 'bg-primary/10 text-primary'
+                      : 'bg-muted text-muted-foreground'
+                  )}>
+                    <sub.icon className="size-4.5" />
+                  </div>
+                  <div className="font-medium text-sm">{sub.label}</div>
+                  <div className="text-[11px] text-muted-foreground leading-snug">
+                    {sub.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <Separator />
 
-        {/* GA or Assigned: show TierCards */}
-        {form.seating_type !== 'seatmap_pro' && (
+        {/* ─── General Admission: Tier Cards ────────────────────────────── */}
+        {form.seating_type === 'general_admission' && (
           <TierCards
             form={form}
             errors={errors}
@@ -1721,41 +1812,41 @@ function StepTicketsAndSeating({
           />
         )}
 
-        {/* Assigned Seating: also show SeatRangeEditor */}
+        {/* ─── Assigned Seating: Tier Cards + Seat Range Editor ─────────── */}
         {form.seating_type === 'reserved_seating_list' && (
-          <div>
-            <Separator className="mb-6" />
-            <div className="mb-4">
-              <h3 className="text-sm font-semibold text-foreground">
-                Seat Ranges
-              </h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Define seat ranges and assign them to ticket tiers.
-              </p>
-            </div>
-            {errors.seating_zones && (
-              <p className="text-xs font-medium text-destructive mb-3">{errors.seating_zones}</p>
-            )}
-            <SeatRangeEditor
-              tiers={form.ticket_tiers.map((t) => ({ id: t.id, name: t.name }))}
-              initialConfig={form.seating_config}
-              onChange={onSeatingConfigChange}
+          <>
+            <TierCards
+              form={form}
+              errors={errors}
+              updateTier={updateTier}
+              addTier={addTier}
+              removeTier={removeTier}
             />
-          </div>
+            <Separator />
+            <div>
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Seat Ranges
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Define seat ranges and assign them to ticket tiers. Customers will be assigned a seat from the range.
+                </p>
+              </div>
+              {errors.seating_zones && (
+                <p className="text-xs font-medium text-destructive mb-3">{errors.seating_zones}</p>
+              )}
+              <SeatRangeEditor
+                tiers={form.ticket_tiers.map((t) => ({ id: t.id, name: t.name }))}
+                initialConfig={form.seating_config}
+                onChange={onSeatingConfigChange}
+              />
+            </div>
+          </>
         )}
 
-        {/* Seatmap Pro: image upload + SeatmapDesigner (zones = tiers) */}
+        {/* ─── Map-Based Seating: Image Upload + Designer + Tiers ────────── */}
         {form.seating_type === 'seatmap_pro' && (
           <>
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-1">
-                Zone-Based Pricing
-              </h3>
-              <p className="text-xs text-muted-foreground mb-4">
-                Draw zones on your venue image. Each zone becomes a pricing tier with its own price, quantity, and color.
-              </p>
-            </div>
-
             {errors.seating_image && (
               <p className="text-xs font-medium text-destructive">{errors.seating_image}</p>
             )}
@@ -1763,10 +1854,11 @@ function StepTicketsAndSeating({
               <p className="text-xs font-medium text-destructive">{errors.seating_zones}</p>
             )}
 
+            {/* Venue Image Upload */}
             <div className="space-y-2">
               <Label>Venue Image</Label>
               {!imageUrl ? (
-                <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
+                <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer hover:border-primary/50 transition-colors bg-muted/30">
                   <Upload className="h-8 w-8 text-muted-foreground mb-2" />
                   <span className="text-sm text-muted-foreground">
                     {uploading ? 'Uploading...' : 'Click to upload venue image'}
@@ -1783,26 +1875,24 @@ function StepTicketsAndSeating({
                   />
                 </label>
               ) : (
-                <div className="space-y-2">
-                  <div className="relative">
-                    <img
-                      src={imageUrl}
-                      alt="Venue"
-                      className="w-full h-40 object-cover rounded-lg"
-                    />
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="absolute top-2 right-2"
-                      onClick={() => {
-                        setImageUrl(null);
-                        setImageWidth(0);
-                        setImageHeight(0);
-                      }}
-                    >
-                      Change
-                    </Button>
-                  </div>
+                <div className="relative">
+                  <img
+                    src={imageUrl}
+                    alt="Venue"
+                    className="w-full h-32 object-cover rounded-xl border border-border"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="absolute top-2 right-2"
+                    onClick={() => {
+                      setImageUrl(null);
+                      setImageWidth(0);
+                      setImageHeight(0);
+                    }}
+                  >
+                    Change Image
+                  </Button>
                 </div>
               )}
               {uploadError && (
@@ -1810,16 +1900,96 @@ function StepTicketsAndSeating({
               )}
             </div>
 
+            {/* Seat Map Designer (canvas + zone panel side by side) */}
             {imageUrl && (
-              <SeatmapDesigner
-                mode="zone"
-                imageUrl={imageUrl}
-                imageWidth={imageWidth}
-                imageHeight={imageHeight}
-                initialConfig={form.seating_config ?? undefined}
-                onChange={onSeatingConfigChange}
-                currency={form.currency}
-              />
+              <>
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Seat Map Editor
+                    </h3>
+                    <Badge variant="outline" className="text-[10px]">
+                      {mapSubMode === 'zone_only' ? 'Zone Only' : 'Individual Seating'}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    {mapSubMode === 'zone_only'
+                      ? 'Draw zones on the image using polygon or rectangle tools. Each zone becomes a tier with its own price and quantity. Edit zone properties in the right panel.'
+                      : 'Draw zones, then generate a seat grid within each zone. Each seat gets a label (e.g. A1, B3). Customers will pick a specific seat. Edit zone/tier properties in the right panel.'}
+                  </p>
+                  <SeatmapDesigner
+                    mode="zone"
+                    imageUrl={imageUrl}
+                    imageWidth={imageWidth}
+                    imageHeight={imageHeight}
+                    initialConfig={form.seating_config ?? undefined}
+                    onChange={onSeatingConfigChange}
+                    currency={form.currency}
+                    showSeatPlacer={mapSubMode === 'individual_seating'}
+                    mapSubMode={mapSubMode}
+                  />
+                </div>
+
+                {/* Generated Tiers Summary */}
+                {form.ticket_tiers.length > 0 && (
+                  <div className="rounded-xl border border-border bg-card p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Ticket className="size-4 text-primary" />
+                      <h3 className="text-sm font-semibold text-foreground">
+                        Generated Tiers ({form.ticket_tiers.length})
+                      </h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      These tiers are auto-generated from the zones you drew. Edit pricing and details in the zone properties panel above.
+                    </p>
+                    <div className="space-y-2">
+                      {form.ticket_tiers.map((tier) => {
+                        const zoneColor = form.seating_config?.zones?.find(z => z.id === tier.id)?.color;
+                        return (
+                          <div
+                            key={tier.id}
+                            className="flex items-center justify-between rounded-lg border border-border px-4 py-3"
+                          >
+                            <div className="flex items-center gap-3">
+                              {zoneColor && (
+                                <span
+                                  className="size-3 rounded-full shrink-0"
+                                  style={{ backgroundColor: zoneColor }}
+                                />
+                              )}
+                              <div>
+                                <span className="text-sm font-medium text-foreground">
+                                  {tier.name || 'Unnamed Zone'}
+                                </span>
+                                {tier.description && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {tier.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-sm font-semibold text-foreground tabular-nums">
+                                {tier.price === 0 ? 'Free' : `$${tier.price.toFixed(2)}`}
+                              </span>
+                              <p className="text-xs text-muted-foreground tabular-nums">
+                                {tier.initial_quantity} {mapSubMode === 'individual_seating' ? 'seats' : 'tickets'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <Separator className="my-3" />
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Total capacity</span>
+                      <span className="font-semibold text-foreground tabular-nums">
+                        {form.ticket_tiers.reduce((sum, t) => sum + (t.initial_quantity || 0), 0)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
@@ -2109,12 +2279,15 @@ function StepReview({
     0
   );
 
+  const mapSubModeLabel = form.seating_config?.map_sub_mode === 'individual_seating'
+    ? 'Individual Seating + Zone'
+    : 'Zone Only';
   const seatingLabel =
     form.seating_type === 'general_admission'
       ? 'General Admission'
       : form.seating_type === 'reserved_seating_list'
-        ? 'Assigned Seating'
-        : 'Seat Map (Zone-Based)';
+        ? 'Assigned Seating (No Map)'
+        : `Map-Based (${mapSubModeLabel})`;
 
   return (
     <div>

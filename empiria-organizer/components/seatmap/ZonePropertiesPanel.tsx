@@ -16,6 +16,7 @@ export function ZonePropertiesPanel({
   zones,
   usedColors,
   onUpdateZone,
+  seatMode = false,
 }: ZonePropertiesPanelProps) {
   const selectedZone = zones.find((z) => z.id === selectedZoneId);
 
@@ -23,7 +24,7 @@ export function ZonePropertiesPanel({
     return (
       <div className="p-4 text-sm text-muted-foreground">
         {zones.length === 0
-          ? "Draw zones on the venue image using the polygon or rectangle tool."
+          ? "Draw zones on the venue image using the polygon or rectangle tool. Each zone becomes a pricing tier."
           : "Select a zone to edit its properties."}
       </div>
     );
@@ -31,10 +32,11 @@ export function ZonePropertiesPanel({
 
   // Colors used by OTHER zones (not the currently selected one)
   const otherUsedColors = usedColors.filter((c) => c !== selectedZone.color);
+  const hasSeatGrid = seatMode && selectedZone.seats && selectedZone.seats.length > 0;
 
   return (
     <div className="p-4 space-y-4">
-      <h3 className="font-medium text-sm">Zone Properties</h3>
+      <h3 className="font-medium text-sm">Tier / Zone Properties</h3>
       <div className="space-y-2">
         <Label htmlFor="zone-name">Name</Label>
         <Input
@@ -118,18 +120,38 @@ export function ZonePropertiesPanel({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="zone-qty">Quantity</Label>
-        <Input
-          id="zone-qty"
-          type="number"
-          min="1"
-          value={selectedZone.initial_quantity}
-          onChange={(e) =>
-            onUpdateZone(selectedZone.id, {
-              initial_quantity: parseInt(e.target.value) || 0,
-            })
-          }
-        />
+        <Label htmlFor="zone-qty">
+          Quantity
+          {hasSeatGrid && (
+            <span className="ml-1 text-xs text-muted-foreground font-normal">(from seats)</span>
+          )}
+        </Label>
+        {hasSeatGrid ? (
+          <div className="flex items-center gap-2">
+            <Input
+              id="zone-qty"
+              type="number"
+              value={selectedZone.initial_quantity}
+              disabled
+              className="bg-muted"
+            />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {selectedZone.seats.length} seats
+            </span>
+          </div>
+        ) : (
+          <Input
+            id="zone-qty"
+            type="number"
+            min="1"
+            value={selectedZone.initial_quantity}
+            onChange={(e) =>
+              onUpdateZone(selectedZone.id, {
+                initial_quantity: parseInt(e.target.value) || 0,
+              })
+            }
+          />
+        )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="zone-max">Max Per Order</Label>

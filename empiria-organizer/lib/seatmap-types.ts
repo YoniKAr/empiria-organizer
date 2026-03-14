@@ -1,5 +1,6 @@
 export type SeatingMode = "general_admission" | "reserved_seating_list" | "seatmap_pro";
 export type ViewMode = "image_overlay" | "schematic";
+export type MapSubMode = "zone_only" | "individual_seating";
 
 // Multi-polygon support for zones
 export interface ZonePolygon {
@@ -52,6 +53,7 @@ export interface SeatingConfig {
   image_width: number;
   image_height: number;
   view_mode: ViewMode;
+  map_sub_mode?: MapSubMode;
   zones?: ZoneDefinition[];
   sections?: SectionDefinition[];
   // For assigned seating (no map):

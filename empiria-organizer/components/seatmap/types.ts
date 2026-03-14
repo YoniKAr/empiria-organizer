@@ -23,7 +23,9 @@ export interface ZonePropertiesPanelProps {
     max_per_order: number;
     description: string;
     currency: string;
+    seats: Array<{ id: string; label: string; x: number; y: number }>;
   }>;
   usedColors: string[];
   onUpdateZone: (id: string, updates: Record<string, string | number>) => void;
+  seatMode?: boolean;
 }
