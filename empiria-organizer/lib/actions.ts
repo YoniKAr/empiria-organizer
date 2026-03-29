@@ -637,7 +637,7 @@ export async function createStripeConnectLink(): Promise<ActionResult<{ url: str
   }
 
   // Generate onboarding link
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://organizer.empiriaindia.com';
+  const baseUrl = process.env.APP_BASE_URL || 'https://organizer.empiriaindia.com';
 
   const accountLink = await stripe.accountLinks.create({
     account: accountId,
@@ -656,7 +656,7 @@ export async function createStripeStandardConnectLink(): Promise<ActionResult<{ 
   const clientId = process.env.STRIPE_CLIENT_ID;
   if (!clientId) return { success: false, error: 'Stripe OAuth is not configured' };
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://organizer.empiriaindia.com';
+  const baseUrl = process.env.APP_BASE_URL || 'https://organizer.empiriaindia.com';
   const redirectUri = `${baseUrl}/api/stripe/oauth-callback`;
 
   const params = new URLSearchParams({

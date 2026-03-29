@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     }
 
     const status = req.nextUrl.searchParams.get('status');
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://organizer.empiriaindia.com';
+    const baseUrl = process.env.APP_BASE_URL || 'https://organizer.empiriaindia.com';
     const supabase = getSupabaseAdmin();
 
     // Get user's Stripe account ID
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard/payments?stripe=incomplete', baseUrl));
   } catch (err) {
     console.error('Stripe callback error:', err);
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://organizer.empiriaindia.com';
+    const baseUrl = process.env.APP_BASE_URL || 'https://organizer.empiriaindia.com';
     return NextResponse.redirect(new URL('/dashboard/payments?error=callback_failed', baseUrl));
   }
 }

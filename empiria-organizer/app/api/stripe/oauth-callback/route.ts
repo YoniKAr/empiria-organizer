@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
 
 export async function GET(req: NextRequest) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://organizer.empiriaindia.com';
+  const baseUrl = process.env.APP_BASE_URL || 'https://organizer.empiriaindia.com';
 
   try {
     const session = await auth0.getSession();
