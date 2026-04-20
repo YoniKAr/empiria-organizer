@@ -9,7 +9,7 @@ export default async function OrganizerRoot() {
   // 2. Not Logged In? -> Redirect to Login
   // The Middleware usually handles this, but this is a double-check.
   if (!session?.user) {
-    redirect('/auth/login?returnTo=/dashboard');
+    redirect('/auth/login?screen_hint=signup&returnTo=/dashboard');
   }
 
   // 3. Logged In? -> Check Role in Supabase

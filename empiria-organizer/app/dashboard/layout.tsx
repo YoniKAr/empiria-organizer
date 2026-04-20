@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { auth0 } from '@/lib/auth0';
+import { redirect } from 'next/navigation';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -12,7 +13,12 @@ import {
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth0.getSession();
-  const user = session?.user;
+
+  if (!session?.user) {
+    redirect('/auth/login?screen_hint=signup');
+  }
+
+  const user = session.user;
 
   const menuItems = [
     { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },

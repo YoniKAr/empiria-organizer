@@ -8,6 +8,7 @@ import { Calendar, MapPin, Users, Pencil, Eye } from 'lucide-react';
 
 export default async function EventsList() {
   const session = await auth0.getSession();
+  if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/events');
   const supabase = getSupabaseAdmin();
   const effectiveOrgId = await getEffectiveOrganizerId();
 

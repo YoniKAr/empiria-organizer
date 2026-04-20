@@ -18,7 +18,7 @@ function toDatetimeLocal(value: string | null): string {
 export default async function CreateEventPage({ searchParams }: PageProps) {
   const { edit: editEventId } = await searchParams;
   const session = await auth0.getSession();
-  if (!session?.user) redirect('/auth/login?returnTo=/dashboard/events/create');
+  if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/events/create');
 
   const supabase = getSupabaseAdmin();
   const effectiveOrgId = await getEffectiveOrganizerId();

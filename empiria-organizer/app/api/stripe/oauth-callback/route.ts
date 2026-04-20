@@ -6,11 +6,13 @@ import { stripe } from '@/lib/stripe';
 export async function GET(req: NextRequest) {
   const baseUrl = process.env.APP_BASE_URL || 'https://organizer.empiriaindia.com';
 
+  // Auth check OUTSIDE try/catch so it can't be swallowed
+  const session = await auth0.getSession();
+  if (!session?.user?.sub) {
+    return NextResponse.redirect(new URL('/auth/login', req.url));
+  }
+
   try {
-    const session = await auth0.getSession();
-    if (!session?.user?.sub) {
-      return NextResponse.redirect(new URL('/auth/login', req.url));
-    }
 
     const code = req.nextUrl.searchParams.get('code');
     const state = req.nextUrl.searchParams.get('state');

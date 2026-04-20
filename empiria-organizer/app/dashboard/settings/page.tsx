@@ -5,7 +5,7 @@ import SettingsClient from './SettingsClient';
 
 export default async function SettingsPage() {
   const session = await auth0.getSession();
-  if (!session?.user) redirect('/auth/login?returnTo=/dashboard/settings');
+  if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/settings');
 
   const email = session.user.email ?? '';
   const isGoogleUser = typeof session.user.sub === 'string' && session.user.sub.startsWith('google-oauth2|');

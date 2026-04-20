@@ -15,7 +15,7 @@ interface PageProps {
 export default async function EventDetailPage({ params }: PageProps) {
   const { eventId } = await params;
   const session = await auth0.getSession();
-  if (!session?.user) redirect('/auth/login?returnTo=/dashboard/events');
+  if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/events');
 
   const supabase = getSupabaseAdmin();
   const effectiveOrgId = await getEffectiveOrganizerId();

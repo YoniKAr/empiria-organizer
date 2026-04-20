@@ -9,7 +9,7 @@ import RevenueChart from '@/components/RevenueChart';
 
 export default async function DashboardHome() {
   const session = await auth0.getSession();
-  if (!session?.user) redirect('/auth/login?returnTo=/dashboard');
+  if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard');
 
   const supabase = getSupabaseAdmin();
   const orgId = await getEffectiveOrganizerId();

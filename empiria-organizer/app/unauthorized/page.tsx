@@ -16,9 +16,9 @@ export default function UnauthorizedPage() {
         </p>
         
         <div className="space-y-3">
-          {/* Option A: Convert Account (Logout -> Signup) */}
+          {/* Option A: Sign up as Organizer */}
           <a
-            href="https://auth.empiriaindia.com/auth/logout?returnTo=https://onboarding.empiriaindia.com"
+            href="https://auth.empiriaindia.com/auth/logout?returnTo=https://auth.empiriaindia.com/auth/login%3Fscreen_hint%3Dsignup"
             className="block w-full bg-black text-white py-3 px-4 rounded-lg font-bold hover:bg-gray-800 transition-colors"
           >
             Create Organizer Account
