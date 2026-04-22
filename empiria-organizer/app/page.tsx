@@ -15,7 +15,7 @@ export default async function OrganizerRoot() {
   // 3. Logged In? -> Check Role in Supabase
   // We use the Service Role Key (Safe on Server) to verify they are actually an organizer
   const supabase = getSupabaseAdmin();
- 
+
 
   const { data: profile } = await supabase
     .from('users')
