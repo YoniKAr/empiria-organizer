@@ -81,6 +81,43 @@ export default async function EventDetailPage({ params }: PageProps) {
     };
   });
 
+  // Fetch revenue splits for this event
+  const { data: revenueSplits } = await supabase
+    .from('revenue_splits')
+    .select('id, recipient_user_id, recipient_stripe_id, percentage, source_type, description')
+    .eq('event_id', eventId)
+    .order('percentage', { ascending: false });
+
+  // If there are splits, fetch the user names
+  let splitsWithNames: Array<{
+    id: string;
+    percentage: number;
+    description: string | null;
+    recipientName: string;
+    recipientEmail: string;
+  }> = [];
+
+  if (revenueSplits && revenueSplits.length > 0) {
+    const userIds = revenueSplits.map((s) => s.recipient_user_id);
+    const { data: splitUsers } = await supabase
+      .from('users')
+      .select('id, full_name, email')
+      .in('id', userIds);
+
+    const userMap = new Map((splitUsers || []).map((u) => [u.id, u]));
+
+    splitsWithNames = revenueSplits.map((s) => {
+      const user = userMap.get(s.recipient_user_id);
+      return {
+        id: s.id,
+        percentage: s.percentage,
+        description: s.description,
+        recipientName: user?.full_name || 'Unknown',
+        recipientEmail: user?.email || '',
+      };
+    });
+  }
+
   const tierOptions = (tiers || []).map((t) => ({
     id: t.id,
     name: t.name,
@@ -167,6 +204,45 @@ export default async function EventDetailPage({ params }: PageProps) {
           />
         </div>
       </div>
+
+      {/* Revenue Splits Section */}
+      {splitsWithNames.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">
+            Revenue Splits
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-2 pr-4 text-gray-500 font-medium">Organizer</th>
+                  <th className="text-left py-2 pr-4 text-gray-500 font-medium">Email</th>
+                  <th className="text-right py-2 pr-4 text-gray-500 font-medium">Percentage</th>
+                  <th className="text-left py-2 text-gray-500 font-medium">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {splitsWithNames.map((split) => (
+                  <tr key={split.id} className="border-b border-gray-50">
+                    <td className="py-2.5 pr-4 font-medium text-gray-900">{split.recipientName}</td>
+                    <td className="py-2.5 pr-4 text-gray-500">{split.recipientEmail}</td>
+                    <td className="py-2.5 pr-4 text-right font-semibold text-gray-900 tabular-nums">{split.percentage}%</td>
+                    <td className="py-2.5 text-gray-500">{split.description || '\u2014'}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td className="py-2.5 pr-4 font-medium text-gray-900">You (Primary)</td>
+                  <td className="py-2.5 pr-4 text-gray-500">\u2014</td>
+                  <td className="py-2.5 pr-4 text-right font-semibold text-gray-900 tabular-nums">
+                    {100 - splitsWithNames.reduce((sum, s) => sum + s.percentage, 0)}%
+                  </td>
+                  <td className="py-2.5 text-gray-500">Primary organizer</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Tickets Section */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">

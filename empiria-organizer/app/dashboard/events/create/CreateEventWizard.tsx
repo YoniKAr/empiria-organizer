@@ -44,11 +44,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/select'; //
-import { createEvent, updateEvent, publishEvent } from '@/lib/actions';
+import { createEvent, updateEvent, publishEvent, saveRevenueSplits } from '@/lib/actions';
 import { useRouter } from 'next/navigation';
 import { SeatmapDesigner } from '@/components/seatmap/SeatmapDesigner';
 import { SeatRangeEditor } from '@/components/seatmap/SeatRangeEditor';
 import { useImageUpload } from '@/components/seatmap/useImageUpload';
+import { RevenueSplitsEditor } from '@/components/RevenueSplitsEditor';
 import type { SeatingMode, SeatingConfig, MapSubMode } from '@/lib/seatmap-types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -93,6 +94,15 @@ interface EventFormData {
   ticket_tiers: TicketTier[];
   seating_type: SeatingMode;
   seating_config: SeatingConfig | null;
+  revenue_splits: Array<{
+    id: string;
+    recipientUserId: string;
+    recipientStripeId: string;
+    recipientName: string;
+    recipientEmail: string;
+    percentage: number;
+    description: string;
+  }>;
 }
 
 interface Category {
@@ -173,6 +183,7 @@ const INITIAL_FORM: EventFormData = {
   ticket_tiers: [makeDefaultTier('Adult'), makeDefaultTier('Child')],
   seating_type: 'general_admission' as SeatingMode,
   seating_config: null,
+  revenue_splits: [],
 };
 
 function toSlug(text: string): string {
@@ -284,6 +295,7 @@ export default function CreateEventWizard({
             : [makeDefaultTier('Adult'), makeDefaultTier('Child')],
         seating_type: (existingEvent as ExistingEvent & { seating_type?: SeatingMode }).seating_type || 'general_admission',
         seating_config: (existingEvent as ExistingEvent & { seating_config?: SeatingConfig }).seating_config || null,
+        revenue_splits: [],
       };
     }
     return INITIAL_FORM;
@@ -564,16 +576,25 @@ export default function CreateEventWizard({
   const saveDraft = async () => {
     setSaving(true);
     try {
+      let eventIdForSplits: string | null = null;
+
       if (savedEventId || isEditing) {
         const idToUpdate = savedEventId || existingEvent?.id;
         if (idToUpdate) {
           const res = await updateEvent(idToUpdate, getSanitizedForm());
           if (!res.success) throw new Error(res.error);
+          eventIdForSplits = idToUpdate;
         }
       } else {
         const res = await createEvent(getSanitizedForm());
         if (!res.success) throw new Error(res.error);
         setSavedEventId(res.data.id);
+        eventIdForSplits = res.data.id;
+      }
+
+      // Save revenue splits
+      if (eventIdForSplits && form.revenue_splits.length > 0) {
+        await saveRevenueSplits(eventIdForSplits, form.revenue_splits);
       }
 
       setToast({
@@ -601,6 +622,12 @@ export default function CreateEventWizard({
       } else {
         const res = await updateEvent(idToPublish, getSanitizedForm());
         if (!res.success) throw new Error(res.error);
+      }
+
+      // Save revenue splits
+      if (form.revenue_splits.length > 0) {
+        const splitsRes = await saveRevenueSplits(idToPublish, form.revenue_splits);
+        if (!splitsRes.success) throw new Error(splitsRes.error);
       }
 
       // Now publish
@@ -751,6 +778,7 @@ export default function CreateEventWizard({
               addTier={addTier}
               removeTier={removeTier}
               onSeatingConfigChange={handleSeatingConfigChange}
+              primaryOrganizerName={organizer?.name || 'You'}
             />
           )}
           {step === 3 && (
@@ -1693,6 +1721,7 @@ function StepTicketsAndSeating({
   addTier,
   removeTier,
   onSeatingConfigChange,
+  primaryOrganizerName,
 }: {
   form: EventFormData;
   errors: Record<string, string>;
@@ -1708,6 +1737,7 @@ function StepTicketsAndSeating({
   addTier: () => void;
   removeTier: (i: number) => void;
   onSeatingConfigChange: (config: SeatingConfig) => void;
+  primaryOrganizerName: string;
 }) {
   const { uploading, error: uploadError, uploadImage } = useImageUpload();
   const [imageUrl, setImageUrl] = useState(form.seating_config?.image_url ?? null);
@@ -2020,6 +2050,17 @@ function StepTicketsAndSeating({
             )}
           </>
         )}
+
+        {/* ─── Revenue Splits ──────────────────────────────────────────── */}
+        <Separator />
+        <RevenueSplitsEditor
+          splits={form.revenue_splits}
+          onSplitsChange={(splits) => updateField('revenue_splits', splits)}
+          primaryOrganizerName={primaryOrganizerName}
+          primaryOrganizerPercentage={
+            100 - form.revenue_splits.reduce((sum, s) => sum + s.percentage, 0)
+          }
+        />
       </div>
     </div>
   );
@@ -2421,6 +2462,31 @@ function StepReview({
             />
           )}
         </ReviewCard>
+
+        {form.revenue_splits.length > 0 && (
+          <ReviewCard title="Revenue Splits" icon={Users}>
+            {form.revenue_splits.map((split) => (
+              <div
+                key={split.id}
+                className="flex justify-between py-1.5 text-sm"
+              >
+                <span className="text-muted-foreground">
+                  {split.recipientName}
+                </span>
+                <span className="font-semibold text-foreground tabular-nums">
+                  {split.percentage}%
+                </span>
+              </div>
+            ))}
+            <Separator className="my-2" />
+            <div className="flex justify-between text-sm font-bold text-foreground">
+              <span>Primary organizer</span>
+              <span className="tabular-nums">
+                {100 - form.revenue_splits.reduce((sum, s) => sum + s.percentage, 0)}%
+              </span>
+            </div>
+          </ReviewCard>
+        )}
 
         {form.cover_image_url && (
           <ReviewCard title="Cover Image" icon={ImageIcon}>

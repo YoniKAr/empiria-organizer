@@ -1476,3 +1476,62 @@ export async function sendTicketsToEmail(input: {
 
   return { success: true, data: { sent: validTickets.length } };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REVENUE SPLITS
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface RevenueSplitInput {
+  recipientUserId: string;
+  recipientStripeId: string;
+  recipientName: string;
+  percentage: number;
+  description: string;
+}
+
+export async function saveRevenueSplits(
+  eventId: string,
+  splits: RevenueSplitInput[]
+): Promise<ActionResult<{ count: number }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const effectiveOrgId = await getEffectiveOrganizerId();
+  const supabase = getSupabaseAdmin();
+
+  // Verify ownership
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, organizer_id')
+    .eq('id', eventId)
+    .single();
+
+  if (!event || event.organizer_id !== effectiveOrgId) {
+    return { success: false, error: 'Event not found or access denied' };
+  }
+
+  // Delete existing splits for this event
+  await supabase.from('revenue_splits').delete().eq('event_id', eventId);
+
+  if (splits.length === 0) {
+    return { success: true, data: { count: 0 } };
+  }
+
+  const splitsToInsert = splits.map((s) => ({
+    event_id: eventId,
+    recipient_user_id: s.recipientUserId,
+    recipient_stripe_id: s.recipientStripeId,
+    percentage: s.percentage,
+    source_type: 'net_revenue',
+    description: s.description || `Split for ${s.recipientName}`,
+  }));
+
+  const { error } = await supabase.from('revenue_splits').insert(splitsToInsert);
+
+  if (error) {
+    console.error('Revenue splits insert error:', error);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true, data: { count: splits.length } };
+}
