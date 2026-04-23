@@ -26,8 +26,14 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  // Standard Auth0 v4 middleware
-  return await auth0.middleware(request);
+  // Standard Auth0 v4 middleware — catch stale cookie errors
+  try {
+    return await auth0.middleware(request);
+  } catch {
+    const response = NextResponse.redirect(new URL("/auth/login", request.url));
+    response.cookies.set("appSession", "", { maxAge: 0, path: "/" });
+    return response;
+  }
 }
 
 export const config = {

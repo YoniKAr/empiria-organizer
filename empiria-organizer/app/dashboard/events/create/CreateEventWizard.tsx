@@ -140,13 +140,13 @@ const STEPS = [
   { id: 4, label: 'Review', icon: Check },
 ];
 
-function makeDefaultTier(name: string): TicketTier {
+function makeDefaultTier(name: string, currency: string = 'cad'): TicketTier {
   return {
     id: crypto.randomUUID(),
     name,
     description: '',
     price: 0,
-    currency: 'cad',
+    currency,
     initial_quantity: 100,
     max_per_order: 10,
     sales_start_at: '',
@@ -255,10 +255,12 @@ export default function CreateEventWizard({
   categories,
   existingEvent,
   organizer,
+  defaultCurrency,
 }: {
   categories: Category[];
   existingEvent?: ExistingEvent;
   organizer?: OrganizerInfo;
+  defaultCurrency?: string;
 }) {
   const router = useRouter();
   const isEditing = !!existingEvent;
@@ -292,13 +294,18 @@ export default function CreateEventWizard({
         ticket_tiers:
           existingEvent.ticket_tiers.length > 0
             ? existingEvent.ticket_tiers
-            : [makeDefaultTier('Adult'), makeDefaultTier('Child')],
+            : [makeDefaultTier('Adult', existingEvent.currency), makeDefaultTier('Child', existingEvent.currency)],
         seating_type: (existingEvent as ExistingEvent & { seating_type?: SeatingMode }).seating_type || 'general_admission',
         seating_config: (existingEvent as ExistingEvent & { seating_config?: SeatingConfig }).seating_config || null,
         revenue_splits: [],
       };
     }
-    return INITIAL_FORM;
+    const currency = defaultCurrency || 'cad';
+    return {
+      ...INITIAL_FORM,
+      currency,
+      ticket_tiers: [makeDefaultTier('Adult', currency), makeDefaultTier('Child', currency)],
+    };
   });
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -350,7 +357,7 @@ export default function CreateEventWizard({
       ...f,
       ticket_tiers: [
         ...f.ticket_tiers,
-        makeDefaultTier(''),
+        makeDefaultTier('', f.currency),
       ],
     }));
   };
@@ -1250,7 +1257,6 @@ function StepBasics({
                 <SelectItem value="cad">CAD</SelectItem>
                 <SelectItem value="usd">USD</SelectItem>
                 <SelectItem value="eur">EUR</SelectItem>
-                <SelectItem value="gbp">GBP</SelectItem>
               </SelectContent>
             </Select>
           </FormField>

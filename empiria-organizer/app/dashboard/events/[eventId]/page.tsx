@@ -1,4 +1,4 @@
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { redirect } from 'next/navigation';
@@ -14,7 +14,7 @@ interface PageProps {
 
 export default async function EventDetailPage({ params }: PageProps) {
   const { eventId } = await params;
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/events');
 
   const supabase = getSupabaseAdmin();

@@ -6,7 +6,13 @@ import { getPerspectiveContext } from "@/lib/admin-perspective";
 import { ExitPerspectiveButton } from "./ExitPerspectiveButton";
 
 export async function AdminPerspectiveBanner() {
-  const ctx = await getPerspectiveContext();
+  let ctx;
+  try {
+    ctx = await getPerspectiveContext();
+  } catch {
+    // Not authenticated (e.g. during static generation of /_not-found)
+    return null;
+  }
 
   if (!ctx.isAdminPerspective) return null;
 

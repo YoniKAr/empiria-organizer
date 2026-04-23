@@ -1,4 +1,4 @@
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { formatCurrency } from '@/lib/utils';
@@ -8,7 +8,7 @@ import { TrendingUp, Ticket, CalendarDays, Eye, ArrowRight } from 'lucide-react'
 import RevenueChart from '@/components/RevenueChart';
 
 export default async function DashboardHome() {
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard');
 
   const supabase = getSupabaseAdmin();

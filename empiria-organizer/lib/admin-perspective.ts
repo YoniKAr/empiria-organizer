@@ -4,7 +4,7 @@
 
 import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "./supabase";
-import { auth0 } from "./auth0";
+import { getSafeSession } from "./auth0";
 
 const PERSPECTIVE_COOKIE = "admin_perspective";
 
@@ -35,7 +35,7 @@ export interface PerspectiveContext {
  * reading the session user directly.
  */
 export async function getPerspectiveContext(): Promise<PerspectiveContext> {
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user) {
     throw new Error("Not authenticated");
   }

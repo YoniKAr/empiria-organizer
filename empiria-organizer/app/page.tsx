@@ -1,10 +1,10 @@
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { redirect } from 'next/navigation';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 export default async function OrganizerRoot() {
   // 1. Check Session (Shared Cookie)
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
 
   // 2. Not Logged In? -> Redirect to Login
   // The Middleware usually handles this, but this is a double-check.

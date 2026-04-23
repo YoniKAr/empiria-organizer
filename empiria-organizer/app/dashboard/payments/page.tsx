@@ -1,4 +1,4 @@
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { formatCurrency } from '@/lib/utils';
@@ -9,7 +9,7 @@ export default async function PaymentsPage({
 }: {
   searchParams: Promise<{ stripe?: string; error?: string; reason?: string }>;
 }) {
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   const supabase = getSupabaseAdmin();
   const params = await searchParams;
   const effectiveOrgId = await getEffectiveOrganizerId();

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { redirect } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
 
   if (!session?.user) {
     redirect('/auth/login?screen_hint=signup');

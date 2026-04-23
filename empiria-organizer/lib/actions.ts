@@ -1,6 +1,6 @@
 'use server';
 
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { stripe } from '@/lib/stripe';
@@ -54,7 +54,7 @@ type ActionResult<T = unknown> =
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 async function getAuthUser() {
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user?.sub) return null;
   return session.user;
 }

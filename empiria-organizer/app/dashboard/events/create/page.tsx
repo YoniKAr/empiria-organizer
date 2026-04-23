@@ -1,4 +1,4 @@
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { redirect } from 'next/navigation';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
@@ -17,7 +17,7 @@ function toDatetimeLocal(value: string | null): string {
 
 export default async function CreateEventPage({ searchParams }: PageProps) {
   const { edit: editEventId } = await searchParams;
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/events/create');
 
   const supabase = getSupabaseAdmin();
@@ -26,7 +26,7 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
   // Gate: Stripe must be connected before creating events
   const { data: user } = await supabase
     .from('users')
-    .select('stripe_onboarding_completed, full_name, avatar_url')
+    .select('stripe_onboarding_completed, full_name, avatar_url, default_currency')
     .eq('auth0_id', effectiveOrgId)
     .single();
 
@@ -129,5 +129,7 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
     };
   }
 
-  return <CreateEventWizard categories={categories || []} existingEvent={existingEvent} organizer={organizer} />;
+  const defaultCurrency = user?.default_currency || 'cad';
+
+  return <CreateEventWizard categories={categories || []} existingEvent={existingEvent} organizer={organizer} defaultCurrency={defaultCurrency} />;
 }

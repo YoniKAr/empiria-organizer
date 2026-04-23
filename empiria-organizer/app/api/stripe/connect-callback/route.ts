@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
 
 export async function GET(req: NextRequest) {
   // Auth check OUTSIDE try/catch so it can't be swallowed
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user?.sub) {
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }

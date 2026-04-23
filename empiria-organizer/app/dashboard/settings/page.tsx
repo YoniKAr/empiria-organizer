@@ -1,10 +1,10 @@
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
 import SettingsClient from './SettingsClient';
 
 export default async function SettingsPage() {
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/settings');
 
   const email = session.user.email ?? '';

@@ -21,3 +21,15 @@ export const auth0 = new Auth0Client({
     logout: '/auth/logout',
   },
 });
+
+/**
+ * Safe wrapper around auth0.getSession() that returns null on any error
+ * (e.g. stale cookie, mismatched secret, expired session).
+ */
+export async function getSafeSession() {
+  try {
+    return await auth0.getSession();
+  } catch {
+    return null;
+  }
+}

@@ -1,4 +1,4 @@
-import { auth0 } from '@/lib/auth0';
+import { getSafeSession } from '@/lib/auth0';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getEffectiveOrganizerId } from '@/lib/admin-perspective';
 import { formatCurrency } from '@/lib/utils';
@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Calendar, MapPin, Users, Pencil, Eye } from 'lucide-react';
 
 export default async function EventsList() {
-  const session = await auth0.getSession();
+  const session = await getSafeSession();
   if (!session?.user) redirect('/auth/login?screen_hint=signup&returnTo=/dashboard/events');
   const supabase = getSupabaseAdmin();
   const effectiveOrgId = await getEffectiveOrganizerId();
