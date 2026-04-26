@@ -46,6 +46,7 @@ interface EventFormInput {
   ticket_tiers: TicketTierInput[];
   seating_type?: string;
   seating_config?: Record<string, unknown> | null;
+  pass_processing_fee?: boolean;
 }
 
 type ActionResult<T = unknown> =
@@ -128,6 +129,7 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
       total_capacity: totalCapacity,
       seating_type: form.seating_type || 'general_admission',
       seating_config: form.seating_config || {},
+      pass_processing_fee: form.pass_processing_fee ?? false,
       status: 'draft',
       source_app: 'organizer.empiria',
     })
@@ -220,6 +222,7 @@ export async function updateEvent(
       total_capacity: totalCapacity,
       seating_type: form.seating_type || 'general_admission',
       seating_config: form.seating_config || {},
+      pass_processing_fee: form.pass_processing_fee ?? false,
     })
     .eq('id', eventId);
 
