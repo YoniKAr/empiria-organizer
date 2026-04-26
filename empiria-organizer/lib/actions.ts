@@ -465,7 +465,7 @@ export async function deleteEvent(
     for (const [orderId, orderTickets] of orderGroups) {
       const { data: order } = await supabase
         .from('orders')
-        .select('stripe_payment_intent_id, currency')
+        .select('stripe_payment_intent_id, currency, payout_breakdown')
         .eq('id', orderId)
         .single();
 
@@ -473,22 +473,67 @@ export async function deleteEvent(
 
       // Calculate total refund for this order's valid tickets
       let totalRefundStripe = 0;
+      let totalRefundDisplay = 0;
       for (const t of orderTickets) {
         const tier = tierMap.get(t.tier_id);
         if (tier) {
           totalRefundStripe += toStripeAmount(tier.price, tier.currency || order.currency || 'cad');
+          totalRefundDisplay += tier.price;
         }
       }
 
       if (totalRefundStripe > 0) {
         try {
+          const breakdown = order.payout_breakdown as any;
+
+          // Refund customer
           await stripe.refunds.create({
             payment_intent: order.stripe_payment_intent_id,
             amount: totalRefundStripe,
             reason: 'requested_by_customer',
-            reverse_transfer: true,
-            refund_application_fee: true,
           });
+
+          const refundRatio = totalRefundDisplay / (breakdown?.subtotal || totalRefundDisplay);
+
+          // Reverse organizer transfer
+          if (breakdown?.organizer_transfer_id) {
+            const reversalAmount = Math.round(breakdown.organizer_payout * refundRatio * 100);
+            if (reversalAmount > 0) {
+              try {
+                await stripe.transfers.createReversal(breakdown.organizer_transfer_id, { amount: reversalAmount });
+              } catch (revErr) {
+                console.error(`Failed to reverse organizer transfer for order ${orderId}:`, revErr);
+              }
+            }
+          }
+
+          // Reverse multi-split partner transfers
+          if (breakdown?.splits) {
+            for (const split of breakdown.splits) {
+              if (split.stripe_transfer_id) {
+                const reversalAmount = Math.round(split.amount * refundRatio * 100);
+                if (reversalAmount > 0) {
+                  try {
+                    await stripe.transfers.createReversal(split.stripe_transfer_id, { amount: reversalAmount });
+                  } catch (revErr) {
+                    console.error(`Failed to reverse split transfer for order ${orderId}:`, revErr);
+                  }
+                }
+              }
+            }
+          }
+
+          // Reverse Elevsoft transfer
+          if (breakdown?.elevsoft_transfer?.stripe_transfer_id) {
+            const reversalAmount = Math.round(breakdown.elevsoft_transfer.amount * refundRatio * 100);
+            if (reversalAmount > 0) {
+              try {
+                await stripe.transfers.createReversal(breakdown.elevsoft_transfer.stripe_transfer_id, { amount: reversalAmount });
+              } catch (revErr) {
+                console.error(`Failed to reverse Elevsoft transfer for order ${orderId}:`, revErr);
+              }
+            }
+          }
         } catch (err) {
           console.error(`Stripe refund error for order ${orderId}:`, err);
         }
@@ -720,10 +765,10 @@ export async function cancelTicketWithRefund(
     .limit(1)
     .maybeSingle();
 
-  // Fetch order for payment intent
+  // Fetch order for payment intent + payout breakdown
   const { data: order } = await supabase
     .from('orders')
-    .select('stripe_payment_intent_id, currency')
+    .select('stripe_payment_intent_id, currency, payout_breakdown')
     .eq('id', ticket.order_id)
     .single();
 
@@ -743,17 +788,61 @@ export async function cancelTicketWithRefund(
   const currency = tier.currency || order.currency || 'cad';
   const refundAmountStripe = toStripeAmount(tier.price, currency);
 
-  // Create partial refund in Stripe
+  // Create partial refund in Stripe + reverse transfers proportionally
   let refundId: string;
   try {
+    const breakdown = order.payout_breakdown as any;
+
+    // Refund customer
     const refund = await stripe.refunds.create({
       payment_intent: order.stripe_payment_intent_id,
       amount: refundAmountStripe,
       reason: 'requested_by_customer',
-      reverse_transfer: true,
-      refund_application_fee: true,
     });
     refundId = refund.id;
+
+    // Calculate refund ratio for proportional transfer reversals
+    const refundRatio = tier.price / (breakdown?.subtotal || tier.price);
+
+    // Reverse organizer transfer
+    if (breakdown?.organizer_transfer_id) {
+      const reversalAmount = Math.round(breakdown.organizer_payout * refundRatio * 100);
+      if (reversalAmount > 0) {
+        try {
+          await stripe.transfers.createReversal(breakdown.organizer_transfer_id, { amount: reversalAmount });
+        } catch (revErr) {
+          console.error('Failed to reverse organizer transfer:', revErr);
+        }
+      }
+    }
+
+    // Reverse multi-split partner transfers
+    if (breakdown?.splits) {
+      for (const split of breakdown.splits) {
+        if (split.stripe_transfer_id) {
+          const reversalAmount = Math.round(split.amount * refundRatio * 100);
+          if (reversalAmount > 0) {
+            try {
+              await stripe.transfers.createReversal(split.stripe_transfer_id, { amount: reversalAmount });
+            } catch (revErr) {
+              console.error(`Failed to reverse split transfer ${split.stripe_transfer_id}:`, revErr);
+            }
+          }
+        }
+      }
+    }
+
+    // Reverse Elevsoft transfer
+    if (breakdown?.elevsoft_transfer?.stripe_transfer_id) {
+      const reversalAmount = Math.round(breakdown.elevsoft_transfer.amount * refundRatio * 100);
+      if (reversalAmount > 0) {
+        try {
+          await stripe.transfers.createReversal(breakdown.elevsoft_transfer.stripe_transfer_id, { amount: reversalAmount });
+        } catch (revErr) {
+          console.error('Failed to reverse Elevsoft transfer:', revErr);
+        }
+      }
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Stripe refund failed';
     console.error('Stripe refund error:', err);
@@ -841,7 +930,7 @@ export async function cancelOrderWithRefund(
   // Fetch order
   const { data: order } = await supabase
     .from('orders')
-    .select('id, event_id, stripe_payment_intent_id, currency')
+    .select('id, event_id, stripe_payment_intent_id, currency, payout_breakdown')
     .eq('id', orderId)
     .single();
 
@@ -906,15 +995,59 @@ export async function cancelOrderWithRefund(
     }
   }
 
-  // Issue single Stripe refund for total amount
+  // Issue Stripe refund + reverse transfers proportionally
   try {
+    const breakdown = order.payout_breakdown as any;
+
+    // Refund customer
     await stripe.refunds.create({
       payment_intent: order.stripe_payment_intent_id,
       amount: totalRefundStripe,
       reason: 'requested_by_customer',
-      reverse_transfer: true,
-      refund_application_fee: true,
     });
+
+    // Calculate refund ratio for proportional transfer reversals
+    const refundRatio = totalRefundDisplay / (breakdown?.subtotal || totalRefundDisplay);
+
+    // Reverse organizer transfer
+    if (breakdown?.organizer_transfer_id) {
+      const reversalAmount = Math.round(breakdown.organizer_payout * refundRatio * 100);
+      if (reversalAmount > 0) {
+        try {
+          await stripe.transfers.createReversal(breakdown.organizer_transfer_id, { amount: reversalAmount });
+        } catch (revErr) {
+          console.error('Failed to reverse organizer transfer:', revErr);
+        }
+      }
+    }
+
+    // Reverse multi-split partner transfers
+    if (breakdown?.splits) {
+      for (const split of breakdown.splits) {
+        if (split.stripe_transfer_id) {
+          const reversalAmount = Math.round(split.amount * refundRatio * 100);
+          if (reversalAmount > 0) {
+            try {
+              await stripe.transfers.createReversal(split.stripe_transfer_id, { amount: reversalAmount });
+            } catch (revErr) {
+              console.error(`Failed to reverse split transfer ${split.stripe_transfer_id}:`, revErr);
+            }
+          }
+        }
+      }
+    }
+
+    // Reverse Elevsoft transfer
+    if (breakdown?.elevsoft_transfer?.stripe_transfer_id) {
+      const reversalAmount = Math.round(breakdown.elevsoft_transfer.amount * refundRatio * 100);
+      if (reversalAmount > 0) {
+        try {
+          await stripe.transfers.createReversal(breakdown.elevsoft_transfer.stripe_transfer_id, { amount: reversalAmount });
+        } catch (revErr) {
+          console.error('Failed to reverse Elevsoft transfer:', revErr);
+        }
+      }
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Stripe refund failed';
     console.error('Stripe refund error:', err);

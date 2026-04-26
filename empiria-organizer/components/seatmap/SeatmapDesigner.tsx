@@ -24,7 +24,6 @@ import type {
   ZoneTier,
   SectionDefinition,
   SeatDefinition,
-  MapSubMode,
 } from "@/lib/seatmap-types";
 
 // Fabric.js v6 supports a `data` property at runtime but doesn't include it in TS types.
@@ -54,7 +53,6 @@ interface SeatmapDesignerProps {
   onChange: (config: SeatingConfig) => void;
   currency?: string;
   showSeatPlacer?: boolean;
-  mapSubMode?: MapSubMode;
 }
 
 interface PolygonState {
@@ -100,7 +98,6 @@ export function SeatmapDesigner({
   onChange,
   currency = "cad",
   showSeatPlacer = false,
-  mapSubMode,
 }: SeatmapDesignerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<Canvas | null>(null);
@@ -277,7 +274,6 @@ export function SeatmapDesigner({
         image_width: imageWidth,
         image_height: imageHeight,
         view_mode: "image_overlay",
-        map_sub_mode: mapSubMode,
         zones: zoneDefs,
       });
     } else {
@@ -313,7 +309,7 @@ export function SeatmapDesigner({
         sections: sectionDefs,
       });
     }
-  }, [imageUrl, imageWidth, imageHeight, mode, mapSubMode, onChange]);
+  }, [imageUrl, imageWidth, imageHeight, mode, onChange]);
 
   // Listen for object modifications to sync config
   useEffect(() => {

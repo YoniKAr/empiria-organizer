@@ -26,7 +26,6 @@ import {
   LayoutGrid,
   List,
   Map,
-  Grid3X3,
   Armchair,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -50,7 +49,8 @@ import { SeatmapDesigner } from '@/components/seatmap/SeatmapDesigner';
 import { SeatRangeEditor } from '@/components/seatmap/SeatRangeEditor';
 import { useImageUpload } from '@/components/seatmap/useImageUpload';
 import { RevenueSplitsEditor } from '@/components/RevenueSplitsEditor';
-import type { SeatingMode, SeatingConfig, MapSubMode } from '@/lib/seatmap-types';
+import { ZoneListEditor } from '@/components/seatmap/ZoneListEditor';
+import type { SeatingMode, SeatingConfig, ZoneDefinition } from '@/lib/seatmap-types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface TicketTier {
@@ -210,37 +210,31 @@ const SEATING_OPTIONS: {
     icon: Users,
   },
   {
-    value: 'reserved_seating_list',
-    label: 'Assigned Seating (No Map)',
+    value: 'assigned_seating',
+    label: 'Seat Based (No Map)',
     description:
-      'Define seat ranges (e.g. A1-A20, B1-B30) and link to tiers. Customers get specific seats without a visual map.',
+      'Define seat ranges (e.g. A1-A20, B1-B30) and link to tiers. Customers get specific named seats.',
     icon: List,
   },
   {
-    value: 'seatmap_pro',
-    label: 'Map-Based Seating',
+    value: 'zone_admission',
+    label: 'Zone Based (No Map)',
     description:
-      'Upload a venue image and draw zones. Full visual seat map with zone-based or individual seat pricing.',
-    icon: Map,
-  },
-];
-
-const MAP_SUB_MODES: {
-  value: MapSubMode;
-  label: string;
-  description: string;
-  icon: typeof MapPin;
-}[] = [
-  {
-    value: 'zone_only',
-    label: 'Zone Only',
-    description: 'Draw zones with pricing. Each zone = a tier with a set quantity. Customers pick a zone.',
+      'Define named zones with capacity and pricing. No venue map needed.',
     icon: LayoutGrid,
   },
   {
-    value: 'individual_seating',
-    label: 'Individual Seating + Zone',
-    description: 'Draw zones and place individual seats within each zone. Customers pick a specific seat.',
+    value: 'zone_map',
+    label: 'Zone Based Map',
+    description:
+      'Draw zones on a venue image. Customers pick a zone on the map.',
+    icon: Map,
+  },
+  {
+    value: 'seat_map',
+    label: 'Seat Selection Map',
+    description:
+      'Place individual seats on a venue image. Customers pick exact seats.',
     icon: Armchair,
   },
 ];
@@ -415,11 +409,13 @@ export default function CreateEventWizard({
     );
   };
 
-  // Auto-generate ticket tiers from seatmap zone tiers when in seatmap_pro mode
+  // Auto-generate ticket tiers from zone tiers for zone-based or map-based modes
   const handleSeatingConfigChange = (config: SeatingConfig) => {
     updateField('seating_config', config);
 
-    if (form.seating_type === 'seatmap_pro' && config.zones) {
+    const isZoneBased = form.seating_type === 'zone_admission' || form.seating_type === 'zone_map' || form.seating_type === 'seat_map';
+
+    if (isZoneBased && config.zones) {
       const ticketTiers: TicketTier[] = [];
 
       for (const zone of config.zones) {
@@ -428,9 +424,9 @@ export default function CreateEventWizard({
           : [{ id: zone.id, name: zone.name, price: zone.price || 0, initial_quantity: zone.initial_quantity || 100, max_per_order: zone.max_per_order || 10, description: zone.description || '', currency: zone.currency || form.currency }];
 
         for (const zt of zoneTiers) {
-          // For individual seating, spread seat count across tiers proportionally
+          // For seat_map mode, use actual seat count if available
           let quantity = zt.initial_quantity;
-          if (config.map_sub_mode === 'individual_seating' && zoneTiers.length === 1) {
+          if (form.seating_type === 'seat_map' && zoneTiers.length === 1) {
             const totalSeats = (zone.polygons || []).reduce(
               (sum, p) => sum + (p.seats?.length || 0), 0
             );
@@ -503,13 +499,15 @@ export default function CreateEventWizard({
     }
     if (s === 2) {
       // Validate based on seating type
-      if (form.seating_type === 'seatmap_pro') {
-        // Seatmap Pro: validate zones
+      const isMapBased = form.seating_type === 'zone_map' || form.seating_type === 'seat_map';
+      const isZoneAdmission = form.seating_type === 'zone_admission';
+
+      if (isMapBased) {
+        // Map-based modes: validate image + zones
         if (!form.seating_config?.image_url) {
           errs.seating_image = 'Please upload a venue image';
         }
         const zones = form.seating_config?.zones;
-        const isIndividualSeating = form.seating_config?.map_sub_mode === 'individual_seating';
         if (!zones || zones.length === 0) {
           errs.seating_zones = 'Please draw at least one zone on the map';
         } else {
@@ -523,7 +521,7 @@ export default function CreateEventWizard({
               if ((zt.price ?? 0) < 0) errs[`zone_${i}_tier_${j}_price`] = 'Price cannot be negative';
               if ((zt.initial_quantity ?? 0) <= 0) errs[`zone_${i}_tier_${j}_qty`] = 'Quantity must be > 0';
             });
-            if (isIndividualSeating) {
+            if (form.seating_type === 'seat_map') {
               const totalSeats = (zone.polygons || []).reduce(
                 (sum, p) => sum + (p.seats?.length || 0), 0
               );
@@ -531,8 +529,26 @@ export default function CreateEventWizard({
             }
           });
         }
+      } else if (isZoneAdmission) {
+        // Zone admission (no map): validate zones exist and have valid tiers
+        const zones = form.seating_config?.zones;
+        if (!zones || zones.length === 0) {
+          errs.seating_zones = 'Please define at least one zone';
+        } else {
+          zones.forEach((zone, i) => {
+            if (!zone.name.trim()) errs[`zone_${i}_name`] = 'Zone name is required';
+            const zoneTiers = zone.tiers && zone.tiers.length > 0
+              ? zone.tiers
+              : [{ price: zone.price ?? 0, initial_quantity: zone.initial_quantity ?? 0, name: zone.name }];
+            zoneTiers.forEach((zt, j) => {
+              if (!zt.name?.trim()) errs[`zone_${i}_tier_${j}_name`] = 'Tier name is required';
+              if ((zt.price ?? 0) < 0) errs[`zone_${i}_tier_${j}_price`] = 'Price cannot be negative';
+              if ((zt.initial_quantity ?? 0) <= 0) errs[`zone_${i}_tier_${j}_qty`] = 'Quantity must be > 0';
+            });
+          });
+        }
       } else {
-        // GA or Assigned: validate tiers
+        // GA or Assigned Seating: validate tiers
         form.ticket_tiers.forEach((tier, i) => {
           if (!tier.name.trim()) errs[`tier_${i}_name`] = 'Tier name is required';
           if (tier.initial_quantity <= 0) errs[`tier_${i}_qty`] = 'Must be > 0';
@@ -540,7 +556,7 @@ export default function CreateEventWizard({
           if (!tier.max_per_order || tier.max_per_order < 1) errs[`tier_${i}_max`] = 'Must be >= 1';
         });
 
-        if (form.seating_type === 'reserved_seating_list') {
+        if (form.seating_type === 'assigned_seating') {
           if (!form.seating_config?.seat_ranges || form.seating_config.seat_ranges.length === 0) {
             errs.seating_zones = 'Please define at least one seat range';
           }
@@ -1749,10 +1765,6 @@ function StepTicketsAndSeating({
   const [imageUrl, setImageUrl] = useState(form.seating_config?.image_url ?? null);
   const [imageWidth, setImageWidth] = useState(form.seating_config?.image_width ?? 0);
   const [imageHeight, setImageHeight] = useState(form.seating_config?.image_height ?? 0);
-  const [mapSubMode, setMapSubMode] = useState<MapSubMode>(
-    form.seating_config?.map_sub_mode ?? 'zone_only'
-  );
-
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1765,12 +1777,15 @@ function StepTicketsAndSeating({
     }
   }
 
-  function handleMapSubModeChange(subMode: MapSubMode) {
-    setMapSubMode(subMode);
-    // Persist sub-mode in seating config
-    if (form.seating_config) {
-      onSeatingConfigChange({ ...form.seating_config, map_sub_mode: subMode });
-    }
+  function handleZoneListChange(zones: ZoneDefinition[]) {
+    const config: SeatingConfig = {
+      image_url: null,
+      image_width: 0,
+      image_height: 0,
+      view_mode: 'schematic',
+      zones,
+    };
+    onSeatingConfigChange(config);
   }
 
   return (
@@ -1818,43 +1833,6 @@ function StepTicketsAndSeating({
           </div>
         </div>
 
-        {/* ─── Map-Based Sub-Mode Selector ──────────────────────────────── */}
-        {form.seating_type === 'seatmap_pro' && (
-          <div>
-            <Label className="text-sm font-medium text-foreground mb-3 block">
-              Map Mode
-            </Label>
-            <div className="grid grid-cols-2 gap-3">
-              {MAP_SUB_MODES.map((sub) => (
-                <button
-                  key={sub.value}
-                  type="button"
-                  className={cn(
-                    'flex flex-col items-center gap-2 p-4 rounded-xl border text-center transition-all',
-                    mapSubMode === sub.value
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-border hover:border-primary/40 hover:bg-muted/30'
-                  )}
-                  onClick={() => handleMapSubModeChange(sub.value)}
-                >
-                  <div className={cn(
-                    'flex size-9 items-center justify-center rounded-lg',
-                    mapSubMode === sub.value
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-muted text-muted-foreground'
-                  )}>
-                    <sub.icon className="size-4.5" />
-                  </div>
-                  <div className="font-medium text-sm">{sub.label}</div>
-                  <div className="text-[11px] text-muted-foreground leading-snug">
-                    {sub.description}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         <Separator />
 
         {/* ─── General Admission: Tier Cards ────────────────────────────── */}
@@ -1869,7 +1847,7 @@ function StepTicketsAndSeating({
         )}
 
         {/* ─── Assigned Seating: Tier Cards + Seat Range Editor ─────────── */}
-        {form.seating_type === 'reserved_seating_list' && (
+        {form.seating_type === 'assigned_seating' && (
           <>
             <TierCards
               form={form}
@@ -1900,8 +1878,22 @@ function StepTicketsAndSeating({
           </>
         )}
 
+        {/* ─── Zone Admission: Zone List Editor (no map) ───────────────── */}
+        {form.seating_type === 'zone_admission' && (
+          <>
+            {errors.seating_zones && (
+              <p className="text-xs font-medium text-destructive">{errors.seating_zones}</p>
+            )}
+            <ZoneListEditor
+              zones={form.seating_config?.zones ?? []}
+              onChange={handleZoneListChange}
+              currency={form.currency}
+            />
+          </>
+        )}
+
         {/* ─── Map-Based Seating: Image Upload + Designer + Tiers ────────── */}
-        {form.seating_type === 'seatmap_pro' && (
+        {(form.seating_type === 'zone_map' || form.seating_type === 'seat_map') && (
           <>
             {errors.seating_image && (
               <p className="text-xs font-medium text-destructive">{errors.seating_image}</p>
@@ -1962,14 +1954,14 @@ function StepTicketsAndSeating({
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-sm font-semibold text-foreground">
-                      Seat Map Editor
+                      {form.seating_type === 'zone_map' ? 'Zone Map Editor' : 'Seat Map Editor'}
                     </h3>
                     <Badge variant="outline" className="text-[10px]">
-                      {mapSubMode === 'zone_only' ? 'Zone Only' : 'Individual Seating'}
+                      {form.seating_type === 'zone_map' ? 'Zone Only' : 'Individual Seating'}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mb-4">
-                    {mapSubMode === 'zone_only'
+                    {form.seating_type === 'zone_map'
                       ? 'Draw zones on the image using polygon or rectangle tools. Each zone becomes a tier with its own price and quantity. Edit zone properties in the right panel.'
                       : 'Draw zones, then generate a seat grid within each zone. Each seat gets a label (e.g. A1, B3). Customers will pick a specific seat. Edit zone/tier properties in the right panel.'}
                   </p>
@@ -1981,8 +1973,7 @@ function StepTicketsAndSeating({
                     initialConfig={form.seating_config ?? undefined}
                     onChange={onSeatingConfigChange}
                     currency={form.currency}
-                    showSeatPlacer={mapSubMode === 'individual_seating'}
-                    mapSubMode={mapSubMode}
+                    showSeatPlacer={form.seating_type === 'seat_map'}
                   />
                 </div>
 
@@ -2033,7 +2024,7 @@ function StepTicketsAndSeating({
                                       {zt.price === 0 ? 'Free' : `$${zt.price.toFixed(2)}`}
                                     </span>
                                     <span className="text-[10px] text-muted-foreground tabular-nums ml-2">
-                                      {zt.initial_quantity} {mapSubMode === 'individual_seating' ? 'seats' : 'qty'}
+                                      {zt.initial_quantity} {form.seating_type === 'seat_map' ? 'seats' : 'qty'}
                                     </span>
                                   </div>
                                 </div>
@@ -2353,15 +2344,16 @@ function StepReview({
     0
   );
 
-  const mapSubModeLabel = form.seating_config?.map_sub_mode === 'individual_seating'
-    ? 'Individual Seating + Zone'
-    : 'Zone Only';
   const seatingLabel =
     form.seating_type === 'general_admission'
       ? 'General Admission'
-      : form.seating_type === 'reserved_seating_list'
-        ? 'Assigned Seating (No Map)'
-        : `Map-Based (${mapSubModeLabel})`;
+      : form.seating_type === 'assigned_seating'
+        ? 'Seat Based (No Map)'
+        : form.seating_type === 'zone_admission'
+          ? 'Zone Based (No Map)'
+          : form.seating_type === 'zone_map'
+            ? 'Zone Based Map'
+            : 'Seat Selection Map';
 
   return (
     <div>
@@ -2447,7 +2439,7 @@ function StepReview({
 
         <ReviewCard title="Seating" icon={MapPin}>
           <ReviewRow label="Type" value={seatingLabel} />
-          {form.seating_type === 'seatmap_pro' && form.seating_config?.zones && (
+          {(form.seating_type === 'zone_admission' || form.seating_type === 'zone_map' || form.seating_type === 'seat_map') && form.seating_config?.zones && (
             <>
               <ReviewRow
                 label="Zones"
@@ -2461,7 +2453,7 @@ function StepReview({
               )}
             </>
           )}
-          {form.seating_type === 'reserved_seating_list' && form.seating_config?.seat_ranges && (
+          {form.seating_type === 'assigned_seating' && form.seating_config?.seat_ranges && (
             <ReviewRow
               label="Seat Ranges"
               value={`${form.seating_config.seat_ranges.length} range${form.seating_config.seat_ranges.length !== 1 ? 's' : ''}`}
