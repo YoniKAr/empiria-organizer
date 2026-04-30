@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useRef } from 'react';
-import { updateUserName, updateUserAvatar } from '@/lib/actions';
+import { updateUserName, updateUserAvatar, updateAccountType } from '@/lib/actions';
 import Image from 'next/image';
 
 export default function SettingsClient({
@@ -10,12 +10,14 @@ export default function SettingsClient({
     defaultFirstName,
     defaultLastName,
     defaultAvatarUrl,
+    defaultAccountType,
 }: {
     email: string;
     isGoogleUser: boolean;
     defaultFirstName: string;
     defaultLastName: string;
     defaultAvatarUrl: string | null;
+    defaultAccountType: 'for_profit' | 'non_profit';
 }) {
     const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
 
@@ -46,6 +48,7 @@ export default function SettingsClient({
                     defaultFirstName={defaultFirstName}
                     defaultLastName={defaultLastName}
                     defaultAvatarUrl={defaultAvatarUrl}
+                    defaultAccountType={defaultAccountType}
                 />
             )}
             {activeTab === 'security' && <SecuritySection isGoogleUser={isGoogleUser} />}
@@ -60,21 +63,42 @@ function ProfileSection({
     defaultFirstName,
     defaultLastName,
     defaultAvatarUrl,
+    defaultAccountType,
 }: {
     email: string;
     defaultFirstName: string;
     defaultLastName: string;
     defaultAvatarUrl: string | null;
+    defaultAccountType: 'for_profit' | 'non_profit';
 }) {
     const [firstName, setFirstName] = useState(defaultFirstName);
     const [lastName, setLastName] = useState(defaultLastName);
     const [avatarUrl, setAvatarUrl] = useState<string | null>(defaultAvatarUrl);
+    const [accountType, setAccountType] = useState<'for_profit' | 'non_profit'>(defaultAccountType);
+    const [accountTypeStatus, setAccountTypeStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [accountTypeError, setAccountTypeError] = useState('');
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [saveError, setSaveError] = useState('');
     const [avatarStatus, setAvatarStatus] = useState<'idle' | 'uploading' | 'error'>('idle');
     const [avatarError, setAvatarError] = useState('');
     const [isPending, startTransition] = useTransition();
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleAccountTypeChange = (type: 'for_profit' | 'non_profit') => {
+        setAccountType(type);
+        setAccountTypeStatus('saving');
+        setAccountTypeError('');
+        startTransition(async () => {
+            const result = await updateAccountType(type);
+            if (result.success) {
+                setAccountTypeStatus('saved');
+                setTimeout(() => setAccountTypeStatus('idle'), 2500);
+            } else {
+                setAccountTypeStatus('error');
+                setAccountTypeError(result.error);
+            }
+        });
+    };
 
     const handleSave = () => {
         startTransition(async () => {
@@ -185,6 +209,75 @@ function ProfileSection({
                         className="hidden"
                         onChange={handleAvatarChange}
                     />
+                </div>
+
+                {/* Account Type */}
+                <div className="mb-8">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Account Type</h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                        Select your organization type. This may affect tax handling on ticket sales.
+                    </p>
+                    <div className="space-y-2">
+                        <button
+                            type="button"
+                            className={`flex items-start gap-3 p-4 rounded-xl border text-left transition-all w-full ${
+                                accountType === 'for_profit'
+                                    ? 'border-[#F98C1F] bg-[#F98C1F]/5 shadow-sm'
+                                    : 'border-gray-200 hover:border-[#F98C1F]/40 hover:bg-gray-50'
+                            }`}
+                            onClick={() => handleAccountTypeChange('for_profit')}
+                        >
+                            <div className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 mt-0.5 ${
+                                accountType === 'for_profit' ? 'border-[#F98C1F] bg-[#F98C1F]' : 'border-gray-300'
+                            }`}>
+                                {accountType === 'for_profit' && (
+                                    <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                    </svg>
+                                )}
+                            </div>
+                            <div>
+                                <div className="font-medium text-sm text-gray-800">For-Profit Organization</div>
+                                <div className="text-xs text-gray-500 mt-0.5">
+                                    Standard organization. You may charge sales tax on ticket prices.
+                                </div>
+                            </div>
+                        </button>
+                        <button
+                            type="button"
+                            className={`flex items-start gap-3 p-4 rounded-xl border text-left transition-all w-full ${
+                                accountType === 'non_profit'
+                                    ? 'border-[#F98C1F] bg-[#F98C1F]/5 shadow-sm'
+                                    : 'border-gray-200 hover:border-[#F98C1F]/40 hover:bg-gray-50'
+                            }`}
+                            onClick={() => handleAccountTypeChange('non_profit')}
+                        >
+                            <div className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 mt-0.5 ${
+                                accountType === 'non_profit' ? 'border-[#F98C1F] bg-[#F98C1F]' : 'border-gray-300'
+                            }`}>
+                                {accountType === 'non_profit' && (
+                                    <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                    </svg>
+                                )}
+                            </div>
+                            <div>
+                                <div className="font-medium text-sm text-gray-800">Non-Profit Organization</div>
+                                <div className="text-xs text-gray-500 mt-0.5">
+                                    Registered non-profit. You may be exempt from charging sales tax on tickets.
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                    {accountTypeStatus === 'saving' && (
+                        <p className="text-xs text-gray-400 mt-2">Saving...</p>
+                    )}
+                    {accountTypeStatus === 'saved' && (
+                        <p className="text-xs text-green-600 mt-2">Account type updated</p>
+                    )}
+                    {accountTypeError && (
+                        <p className="text-xs text-red-500 mt-2">{accountTypeError}</p>
+                    )}
                 </div>
 
                 {/* Fields */}

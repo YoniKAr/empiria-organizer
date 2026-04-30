@@ -14,7 +14,7 @@ export default async function SettingsPage() {
   const supabase = getSupabaseAdmin();
   const { data: profile } = await supabase
     .from('users')
-    .select('full_name, avatar_url')
+    .select('full_name, avatar_url, account_type')
     .eq('auth0_id', session.user.sub)
     .single();
 
@@ -23,6 +23,7 @@ export default async function SettingsPage() {
   const firstName = spaceIndex === -1 ? fullName : fullName.slice(0, spaceIndex);
   const lastName = spaceIndex === -1 ? '' : fullName.slice(spaceIndex + 1);
   const avatarUrl = profile?.avatar_url ?? null;
+  const accountType = (profile?.account_type as 'for_profit' | 'non_profit') ?? 'for_profit';
 
   return (
     <SettingsClient
@@ -31,6 +32,7 @@ export default async function SettingsPage() {
       defaultFirstName={firstName}
       defaultLastName={lastName}
       defaultAvatarUrl={avatarUrl}
+      defaultAccountType={accountType}
     />
   );
 }

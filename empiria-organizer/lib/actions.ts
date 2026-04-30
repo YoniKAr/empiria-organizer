@@ -47,6 +47,7 @@ interface EventFormInput {
   seating_type?: string;
   seating_config?: Record<string, unknown> | null;
   pass_processing_fee?: boolean;
+  charge_ticket_tax?: boolean;
 }
 
 type ActionResult<T = unknown> =
@@ -130,6 +131,7 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
       seating_type: form.seating_type || 'general_admission',
       seating_config: form.seating_config || {},
       pass_processing_fee: form.pass_processing_fee ?? false,
+      charge_ticket_tax: form.charge_ticket_tax ?? false,
       status: 'draft',
       source_app: 'organizer.empiria',
     })
@@ -223,6 +225,7 @@ export async function updateEvent(
       seating_type: form.seating_type || 'general_admission',
       seating_config: form.seating_config || {},
       pass_processing_fee: form.pass_processing_fee ?? false,
+      charge_ticket_tax: form.charge_ticket_tax ?? false,
     })
     .eq('id', eventId);
 
@@ -1154,6 +1157,22 @@ export async function cancelOrderWithRefund(
 // ═══════════════════════════════════════════════════════════════════════════
 // USER PROFILE ACTIONS
 // ═══════════════════════════════════════════════════════════════════════════
+
+export async function updateAccountType(
+  accountType: 'for_profit' | 'non_profit'
+): Promise<ActionResult<void>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('users')
+    .update({ account_type: accountType })
+    .eq('auth0_id', user.sub);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
 
 export async function updateUserName(
   firstName: string,
