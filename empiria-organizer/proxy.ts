@@ -26,21 +26,7 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  // Only run auth0.middleware() for /auth/* routes (login, callback, logout).
-  // For all other routes, pass through — avoids the SDK misinterpreting
-  // query params or unnecessarily rolling sessions on every request.
-  if (request.nextUrl.pathname.startsWith("/auth/")) {
-    try {
-      return await auth0.middleware(request);
-    } catch {
-      // Clear stale session cookie and redirect to home (NOT /auth/login to avoid loops)
-      const response = NextResponse.redirect(new URL("/", request.url));
-      response.cookies.delete("appSession");
-      return response;
-    }
-  }
-
-  return NextResponse.next();
+  return auth0.middleware(request);
 }
 
 export const config = {
