@@ -105,6 +105,7 @@ export function SeatmapDesigner({
   const [activeTool, setActiveTool] = useState<DrawingTool>("select");
   const [zones, setZones] = useState<ZoneState[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(null);
   const [addingToZoneId, setAddingToZoneId] = useState<string | null>(null);
   const zoneCounterRef = useRef(0);
   const zonesRef = useRef<ZoneState[]>([]);
@@ -156,19 +157,26 @@ export function SeatmapDesigner({
       const obj = e.selected?.[0];
       if (obj) {
         const d = getObjData(obj);
-        if (d?.zoneId) setSelectedZoneId(d.zoneId);
+        if (d?.zoneId) {
+          setSelectedZoneId(d.zoneId);
+          setSelectedPolygonId(d.polygonId ?? null);
+        }
       }
     });
 
     canvas.on("selection:cleared", () => {
       setSelectedZoneId(null);
+      setSelectedPolygonId(null);
     });
 
     canvas.on("selection:updated", (e) => {
       const obj = e.selected?.[0];
       if (obj) {
         const d = getObjData(obj);
-        if (d?.zoneId) setSelectedZoneId(d.zoneId);
+        if (d?.zoneId) {
+          setSelectedZoneId(d.zoneId);
+          setSelectedPolygonId(d.polygonId ?? null);
+        }
       }
     });
 
@@ -489,6 +497,110 @@ export function SeatmapDesigner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, addingToZoneId]);
 
+  // Seat-place tool: click to place individual seats
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas || activeTool !== "seat-place") return;
+
+    const handleMouseDown = (e: TPointerEventInfo) => {
+      const currentZoneId = selectedZoneId;
+      const currentPolygonId = selectedPolygonId;
+      if (!currentZoneId || !currentPolygonId) return;
+
+      const pointer = e.scenePoint;
+      const zone = zonesRef.current.find((z) => z.id === currentZoneId);
+      if (!zone) return;
+      const color = zone.color || "#3b82f6";
+
+      // Compute next seat label from existing seats in this polygon
+      const polygon = zone.polygons.find((p) => p.id === currentPolygonId);
+      const existingSeats = polygon?.seats || [];
+      let maxNum = 0;
+      for (const s of existingSeats) {
+        const match = s.label.match(/(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+      const nextNum = maxNum + 1;
+
+      // Use same row letter as existing seats or default to "A"
+      let rowLetter = "A";
+      if (existingSeats.length > 0) {
+        const lastLabel = existingSeats[existingSeats.length - 1].label;
+        const letterMatch = lastLabel.match(/^([A-Z]+)/i);
+        if (letterMatch) rowLetter = letterMatch[1].toUpperCase();
+      }
+
+      const seatId = crypto.randomUUID();
+      const label = `${rowLetter}${nextNum}`;
+      const x = pointer.x;
+      const y = pointer.y;
+
+      const circle = new Circle({
+        left: x - 6,
+        top: y - 6,
+        radius: 6,
+        fill: color,
+        stroke: "#fff",
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+      });
+      setObjData(circle, {
+        seatId,
+        sectionId: currentZoneId,
+        polygonId: currentPolygonId,
+        label,
+      });
+      canvas.add(circle);
+
+      const seatLabel = new FabricText(label, {
+        left: x,
+        top: y,
+        fontSize: 7,
+        fontFamily: "system-ui, sans-serif",
+        fill: "#ffffff",
+        originX: "center",
+        originY: "center",
+        selectable: false,
+        evented: false,
+      });
+      setObjData(seatLabel, {
+        sectionId: currentZoneId,
+        polygonId: currentPolygonId,
+        isSeatLabel: true,
+      });
+      canvas.add(seatLabel);
+      canvas.renderAll();
+
+      const newSeat: SeatDefinition = { id: seatId, label, x, y };
+      setZones((prev) =>
+        prev.map((z) => {
+          if (z.id !== currentZoneId) return z;
+          const updatedPolygons = z.polygons.map((p) =>
+            p.id === currentPolygonId
+              ? { ...p, seats: [...p.seats, newSeat] }
+              : p
+          );
+          const allSeats = updatedPolygons.flatMap((p) => p.seats);
+          const updatedTiers =
+            z.tiers.length === 1
+              ? z.tiers.map((t) => ({ ...t, initial_quantity: allSeats.length }))
+              : z.tiers;
+          return { ...z, seats: allSeats, polygons: updatedPolygons, tiers: updatedTiers };
+        })
+      );
+    };
+
+    canvas.on("mouse:down", handleMouseDown);
+    return () => {
+      canvas.off("mouse:down", handleMouseDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool, selectedZoneId, selectedPolygonId]);
+
   // Pan tool
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -701,44 +813,61 @@ export function SeatmapDesigner({
 
       setZones((prev) => prev.filter((z) => z.id !== zoneId));
       setSelectedZoneId(null);
+      setSelectedPolygonId(null);
     } else {
-      // Remove just this polygon from the zone
+      // Remove this polygon and its seats from canvas
+      const seatsToRemove = canvas.getObjects().filter((obj) => {
+        const od = getObjData(obj);
+        return od?.sectionId === zoneId && od?.polygonId === polygonId;
+      });
+      seatsToRemove.forEach((obj) => canvas.remove(obj));
       canvas.remove(active);
       canvas.discardActiveObject();
       canvas.renderAll();
 
       setZones((prev) =>
-        prev.map((z) =>
-          z.id === zoneId
-            ? {
-                ...z,
-                polygons: z.polygons.filter((p) => p.id !== polygonId),
-              }
-            : z
-        )
+        prev.map((z) => {
+          if (z.id !== zoneId) return z;
+          const updatedPolygons = z.polygons.filter((p) => p.id !== polygonId);
+          const allSeats = updatedPolygons.flatMap((p) => p.seats);
+          const updatedTiers =
+            z.tiers.length === 1
+              ? z.tiers.map((t) => ({ ...t, initial_quantity: allSeats.length }))
+              : z.tiers;
+          return { ...z, polygons: updatedPolygons, seats: allSeats, tiers: updatedTiers };
+        })
       );
+      setSelectedPolygonId(null);
     }
 
     syncConfig();
   }
 
   function handleGenerateGrid(rows: number, cols: number, prefix: string) {
-    if (!selectedZoneId) return;
+    if (!selectedZoneId || !selectedPolygonId) return;
     const canvas = fabricRef.current;
     if (!canvas) return;
 
-    // Find the zone's fabric objects to get bounding box (use first polygon)
+    // Find the SPECIFIC polygon's canvas object by polygonId
     const allObjs = canvas.getObjects();
     const zoneObj = allObjs.find((obj) => {
       const d = getObjData(obj);
-      return d?.zoneId === selectedZoneId && !d.seatId && !d.isSeatLabel;
+      return (
+        d?.zoneId === selectedZoneId &&
+        d?.polygonId === selectedPolygonId &&
+        !d.seatId &&
+        !d.isSeatLabel
+      );
     });
     if (!zoneObj) return;
 
-    // Remove existing seat circles and labels for this section
+    // Remove existing seats for THIS POLYGON only
     const existingSeats = allObjs.filter((obj) => {
       const od = getObjData(obj);
-      return od?.sectionId === selectedZoneId;
+      return (
+        od?.sectionId === selectedZoneId &&
+        od?.polygonId === selectedPolygonId
+      );
     });
     existingSeats.forEach((obj) => canvas.remove(obj));
 
@@ -756,11 +885,17 @@ export function SeatmapDesigner({
     const zone = zones.find((z) => z.id === selectedZoneId);
     const color = zone?.color || "#3b82f6";
 
+    // Row labels: prefix is starting letter, increments per row (top to bottom)
+    const startCharCode = prefix
+      ? prefix.toUpperCase().charCodeAt(0)
+      : 65; // 'A'
+
     for (let r = 0; r < rows; r++) {
-      const rowLetter = prefix || String.fromCharCode(65 + (r % 26));
+      const rowLetter = String.fromCharCode(startCharCode + (r % 26));
       for (let c = 0; c < cols; c++) {
         const seatId = crypto.randomUUID();
         const label = `${rowLetter}${c + 1}`;
+        // Rows top-to-bottom, seats left-to-right
         const x =
           bound.left + padX + (cols > 1 ? c * spacingX : innerW / 2);
         const y =
@@ -768,7 +903,6 @@ export function SeatmapDesigner({
 
         seats.push({ id: seatId, label, x, y });
 
-        // Seat circle
         const circle = new Circle({
           left: x - 6,
           top: y - 6,
@@ -782,11 +916,11 @@ export function SeatmapDesigner({
         setObjData(circle, {
           seatId,
           sectionId: selectedZoneId,
+          polygonId: selectedPolygonId,
           label,
         });
         canvas.add(circle);
 
-        // Seat label text
         const seatLabel = new FabricText(label, {
           left: x,
           top: y,
@@ -800,6 +934,7 @@ export function SeatmapDesigner({
         });
         setObjData(seatLabel, {
           sectionId: selectedZoneId,
+          polygonId: selectedPolygonId,
           isSeatLabel: true,
         });
         canvas.add(seatLabel);
@@ -811,18 +946,50 @@ export function SeatmapDesigner({
     setZones((prev) =>
       prev.map((z) => {
         if (z.id !== selectedZoneId) return z;
-        // Store seats in the first polygon
-        const updatedPolygons = z.polygons.map((p, i) =>
-          i === 0 ? { ...p, seats } : p
+        // Store seats in the MATCHING polygon
+        const updatedPolygons = z.polygons.map((p) =>
+          p.id === selectedPolygonId ? { ...p, seats } : p
         );
-        // Distribute seat count across tiers (set total on first tier if single tier)
-        const updatedTiers = z.tiers.length === 1
-          ? z.tiers.map((t) => ({ ...t, initial_quantity: seats.length }))
-          : z.tiers;
-        return { ...z, seats, polygons: updatedPolygons, tiers: updatedTiers };
+        const allSeats = updatedPolygons.flatMap((p) => p.seats);
+        const updatedTiers =
+          z.tiers.length === 1
+            ? z.tiers.map((t) => ({ ...t, initial_quantity: allSeats.length }))
+            : z.tiers;
+        return { ...z, seats: allSeats, polygons: updatedPolygons, tiers: updatedTiers };
       })
     );
-    syncConfig();
+  }
+
+  function handleClearSeatsForPolygon() {
+    if (!selectedZoneId || !selectedPolygonId) return;
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    const allObjs = canvas.getObjects();
+    const toRemove = allObjs.filter((obj) => {
+      const od = getObjData(obj);
+      return (
+        od?.sectionId === selectedZoneId &&
+        od?.polygonId === selectedPolygonId
+      );
+    });
+    toRemove.forEach((obj) => canvas.remove(obj));
+    canvas.renderAll();
+
+    setZones((prev) =>
+      prev.map((z) => {
+        if (z.id !== selectedZoneId) return z;
+        const updatedPolygons = z.polygons.map((p) =>
+          p.id === selectedPolygonId ? { ...p, seats: [] } : p
+        );
+        const allSeats = updatedPolygons.flatMap((p) => p.seats);
+        const updatedTiers =
+          z.tiers.length === 1
+            ? z.tiers.map((t) => ({ ...t, initial_quantity: allSeats.length }))
+            : z.tiers;
+        return { ...z, seats: allSeats, polygons: updatedPolygons, tiers: updatedTiers };
+      })
+    );
   }
 
   function handleZoomIn() {
@@ -928,6 +1095,7 @@ export function SeatmapDesigner({
     setZones((prev) => prev.filter((z) => z.id !== zoneId));
     if (selectedZoneId === zoneId) {
       setSelectedZoneId(null);
+      setSelectedPolygonId(null);
     }
     if (addingToZoneId === zoneId) {
       setAddingToZoneId(null);
@@ -935,6 +1103,7 @@ export function SeatmapDesigner({
   }
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId);
+  const selectedPolygon = selectedZone?.polygons.find((p) => p.id === selectedPolygonId);
 
   return (
     <div className="border rounded-lg overflow-hidden bg-background">
@@ -974,8 +1143,18 @@ export function SeatmapDesigner({
           {(mode === "seat" || showSeatPlacer) && selectedZoneId && selectedZone && (
             <SeatPlacer
               sectionId={selectedZoneId}
+              polygonId={selectedPolygonId}
               seats={selectedZone.seats}
+              polygonSeatCount={selectedPolygon?.seats.length ?? 0}
+              totalPolygons={selectedZone.polygons.length}
               onGenerateGrid={handleGenerateGrid}
+              onClearSeats={handleClearSeatsForPolygon}
+              seatCountWarning={
+                selectedZone.seats.length > 0 &&
+                selectedZone.tiers.reduce((sum, t) => sum + t.initial_quantity, 0) > selectedZone.seats.length
+                  ? `Tier quantity (${selectedZone.tiers.reduce((sum, t) => sum + t.initial_quantity, 0)}) exceeds placed seats (${selectedZone.seats.length})`
+                  : null
+              }
             />
           )}
 
@@ -1001,77 +1180,127 @@ export function SeatmapDesigner({
             )}
             <div className="space-y-1">
               {zones.map((z) => (
-                <div key={z.id} className="flex items-center gap-1">
-                  <button
-                    className={`flex-1 text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${
-                      selectedZoneId === z.id
-                        ? "bg-accent"
-                        : "hover:bg-accent/50"
-                    }`}
-                    onClick={() => {
-                      setSelectedZoneId(z.id);
-                      setAddingToZoneId(null);
-                      const canvas = fabricRef.current;
-                      if (!canvas) return;
-                      // Select the first polygon of this zone on canvas
-                      const objs = canvas.getObjects();
-                      for (const obj of objs) {
-                        const d = getObjData(obj);
-                        if (d?.zoneId === z.id && !d.seatId && !d.isSeatLabel) {
-                          canvas.setActiveObject(obj);
-                          canvas.renderAll();
-                          break;
-                        }
-                      }
-                    }}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: z.color }}
-                    />
-                    <span className="truncate">{z.name}</span>
-                    {z.polygons.length > 1 && (
-                      <span className="text-xs text-muted-foreground">
-                        ({z.polygons.length})
-                      </span>
-                    )}
-                    {z.tiers.length > 1 && (
-                      <span className="text-xs text-muted-foreground">
-                        {z.tiers.length}T
-                      </span>
-                    )}
-                    {(mode === "seat" || showSeatPlacer) && z.seats.length > 0 && (
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {z.seats.length} seats
-                      </span>
-                    )}
-                  </button>
-                  {mode === "zone" && (
+                <div key={z.id} className="space-y-0.5">
+                  <div className="flex items-center gap-1">
                     <button
-                      title="Add polygon to this zone"
-                      className={`shrink-0 w-7 h-7 rounded flex items-center justify-center text-xs ${
-                        addingToZoneId === z.id
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-accent text-muted-foreground"
+                      className={`flex-1 text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${
+                        selectedZoneId === z.id
+                          ? "bg-accent"
+                          : "hover:bg-accent/50"
                       }`}
                       onClick={() => {
-                        if (addingToZoneId === z.id) {
-                          handleStopAddingToZone();
-                        } else {
-                          handleStartAddingToZone(z.id);
+                        setSelectedZoneId(z.id);
+                        setAddingToZoneId(null);
+                        setSelectedPolygonId(z.polygons[0]?.id ?? null);
+                        const canvas = fabricRef.current;
+                        if (!canvas) return;
+                        const objs = canvas.getObjects();
+                        for (const obj of objs) {
+                          const d = getObjData(obj);
+                          if (d?.zoneId === z.id && !d.seatId && !d.isSeatLabel) {
+                            canvas.setActiveObject(obj);
+                            canvas.renderAll();
+                            break;
+                          }
                         }
                       }}
                     >
-                      +
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: z.color }}
+                      />
+                      <span className="truncate">{z.name}</span>
+                      {z.polygons.length > 1 && (
+                        <span className="text-xs text-muted-foreground">
+                          ({z.polygons.length})
+                        </span>
+                      )}
+                      {z.tiers.length > 1 && (
+                        <span className="text-xs text-muted-foreground">
+                          {z.tiers.length}T
+                        </span>
+                      )}
+                      {(mode === "seat" || showSeatPlacer) && z.seats.length > 0 && (
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {z.seats.length} seats
+                        </span>
+                      )}
                     </button>
-                  )}
-                  <button
-                    title="Remove zone"
-                    className="shrink-0 w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => handleRemoveZone(z.id)}
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
+                    {mode === "zone" && (
+                      <button
+                        title="Add polygon to this zone"
+                        className={`shrink-0 w-7 h-7 rounded flex items-center justify-center text-xs ${
+                          addingToZoneId === z.id
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-accent text-muted-foreground"
+                        }`}
+                        onClick={() => {
+                          if (addingToZoneId === z.id) {
+                            handleStopAddingToZone();
+                          } else {
+                            handleStartAddingToZone(z.id);
+                          }
+                        }}
+                      >
+                        +
+                      </button>
+                    )}
+                    <button
+                      title="Remove zone"
+                      className="shrink-0 w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => handleRemoveZone(z.id)}
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  </div>
+
+                  {/* Polygon sub-items for seat mode */}
+                  {selectedZoneId === z.id &&
+                    (mode === "seat" || showSeatPlacer) &&
+                    z.polygons.length > 1 && (
+                      <div className="ml-5 space-y-0.5">
+                        {z.polygons.map((p, pIdx) => (
+                          <button
+                            key={p.id}
+                            className={`w-full text-left text-xs px-2 py-1 rounded flex items-center gap-2 ${
+                              selectedPolygonId === p.id
+                                ? "bg-primary/10 text-primary"
+                                : "hover:bg-accent/50 text-muted-foreground"
+                            }`}
+                            onClick={() => {
+                              setSelectedPolygonId(p.id);
+                              const canvas = fabricRef.current;
+                              if (!canvas) return;
+                              const objs = canvas.getObjects();
+                              for (const obj of objs) {
+                                const d = getObjData(obj);
+                                if (
+                                  d?.zoneId === z.id &&
+                                  d?.polygonId === p.id &&
+                                  !d.seatId &&
+                                  !d.isSeatLabel
+                                ) {
+                                  canvas.setActiveObject(obj);
+                                  canvas.renderAll();
+                                  break;
+                                }
+                              }
+                            }}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-sm shrink-0"
+                              style={{ backgroundColor: z.color }}
+                            />
+                            <span>Polygon {pIdx + 1}</span>
+                            {p.seats.length > 0 && (
+                              <span className="ml-auto tabular-nums">
+                                {p.seats.length} seats
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                 </div>
               ))}
             </div>

@@ -30,6 +30,7 @@ export interface ZonePropertiesPanelProps {
     color: string;
     tiers: ZoneTierItem[];
     seats: Array<{ id: string; label: string; x: number; y: number }>;
+    polygons: Array<{ id: string; seats: Array<{ id: string; label: string; x: number; y: number }> }>;
   }>;
   usedColors: string[];
   onUpdateZone: (id: string, updates: Record<string, unknown>) => void;

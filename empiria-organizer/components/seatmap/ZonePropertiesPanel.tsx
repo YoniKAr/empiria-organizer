@@ -118,6 +118,15 @@ export function ZonePropertiesPanel({
         </div>
       )}
 
+      {/* Seat count validation warning */}
+      {seatMode && selectedZone.seats.length > 0 && totalTierQty > selectedZone.seats.length && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Warning: Total tier quantity ({totalTierQty}) exceeds placed
+          seats ({selectedZone.seats.length}). You cannot sell more tickets
+          than physical seats.
+        </div>
+      )}
+
       {/* Zone Tiers */}
       <div className="space-y-3 pt-1">
         <div className="flex items-center justify-between">
