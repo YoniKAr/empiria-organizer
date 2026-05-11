@@ -27,6 +27,7 @@ import {
   List,
   Map,
   Armchair,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/button';
@@ -254,11 +255,13 @@ export default function CreateEventWizard({
   existingEvent,
   organizer,
   defaultCurrency,
+  stripeConnected = false,
 }: {
   categories: Category[];
   existingEvent?: ExistingEvent;
   organizer?: OrganizerInfo;
   defaultCurrency?: string;
+  stripeConnected?: boolean;
 }) {
   const router = useRouter();
   const isEditing = !!existingEvent;
@@ -820,7 +823,7 @@ export default function CreateEventWizard({
             />
           )}
           {step === 4 && (
-            <StepReview form={form} categories={categories} />
+            <StepReview form={form} categories={categories} stripeConnected={stripeConnected} />
           )}
         </div>
 
@@ -847,8 +850,9 @@ export default function CreateEventWizard({
             ) : (
               <Button
                 onClick={handlePublish}
-                disabled={publishing}
+                disabled={publishing || !stripeConnected}
                 className="gap-1.5 bg-primary px-8 text-primary-foreground hover:bg-primary/90"
+                title={!stripeConnected ? 'Connect your Stripe account to publish' : undefined}
               >
                 <Rocket className="size-4" />
                 {publishing ? 'Publishing...' : 'Publish Event'}
@@ -2432,9 +2436,11 @@ function StepMedia({
 function StepReview({
   form,
   categories,
+  stripeConnected = false,
 }: {
   form: EventFormData;
   categories: Category[];
+  stripeConnected?: boolean;
 }) {
   const cat = categories.find((c) => c.id === form.category_id);
   const totalTickets = form.ticket_tiers.reduce(
@@ -2459,6 +2465,23 @@ function StepReview({
         title="Review Your Event"
         description="Make sure everything looks good before publishing."
       />
+
+      {!stripeConnected && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/40">
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div>
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+              Stripe account not connected
+            </p>
+            <p className="mt-0.5 text-sm text-amber-700 dark:text-amber-300">
+              Connect your Stripe account to publish this event. You can save it as a draft for now.{' '}
+              <a href="/dashboard/payments" className="font-medium underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100">
+                Go to Payments
+              </a>
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-5">
         <ReviewCard title="Event Basics" icon={FileText}>

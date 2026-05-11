@@ -98,10 +98,6 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
 
   const effectiveOrgId = await getEffectiveOrganizerId();
 
-  if (!(await requireStripeConnected(effectiveOrgId))) {
-    return { success: false, error: 'Stripe account must be connected before creating events' };
-  }
-
   const supabase = getSupabaseAdmin();
 
   if (!form.category_id) return { success: false, error: 'Category is required' };
@@ -282,6 +278,11 @@ export async function publishEvent(eventId: string): Promise<ActionResult<{ id: 
 
   if (event.status !== 'draft') {
     return { success: false, error: `Cannot publish event with status "${event.status}"` };
+  }
+
+  // Check if organizer has Stripe connected before allowing publish
+  if (!(await requireStripeConnected(effectiveOrgId))) {
+    return { success: false, error: 'Connect your Stripe account before publishing. Go to Payments in your dashboard.' };
   }
 
   if (!event.title) {

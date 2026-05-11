@@ -23,16 +23,14 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
   const supabase = getSupabaseAdmin();
   const effectiveOrgId = await getEffectiveOrganizerId();
 
-  // Gate: Stripe must be connected before creating events
+  // Fetch user profile (Stripe status passed to wizard for publish gating)
   const { data: user } = await supabase
     .from('users')
     .select('stripe_onboarding_completed, full_name, avatar_url, default_currency')
     .eq('auth0_id', effectiveOrgId)
     .single();
 
-  if (!user?.stripe_onboarding_completed) {
-    redirect('/dashboard/payments?reason=stripe_required');
-  }
+  const stripeConnected = user?.stripe_onboarding_completed ?? false;
 
   const organizer = {
     name: user?.full_name || 'Organizer',
@@ -131,5 +129,5 @@ export default async function CreateEventPage({ searchParams }: PageProps) {
 
   const defaultCurrency = user?.default_currency || 'cad';
 
-  return <CreateEventWizard categories={categories || []} existingEvent={existingEvent} organizer={organizer} defaultCurrency={defaultCurrency} />;
+  return <CreateEventWizard categories={categories || []} existingEvent={existingEvent} organizer={organizer} defaultCurrency={defaultCurrency} stripeConnected={stripeConnected} />;
 }

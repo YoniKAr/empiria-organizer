@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import {
-    LineChart,
+    ComposedChart,
+    Area,
     Line,
     XAxis,
     YAxis,
@@ -31,17 +32,6 @@ const PERIODS: { label: string; value: Period }[] = [
     { label: 'All', value: 'All' },
 ];
 
-// ─── Supabase Integration Note ───────────────────────────────────────────────
-// When real data is available, pass it from page.tsx like:
-//   const { data: orders } = await supabase
-//       .from('orders')
-//       .select('created_at, organizer_payout_amount')
-//       .eq('status', 'completed')
-//       .eq('events.organizer_id', orgId);
-// The `orders` prop already matches this shape. Dummy data is used automatically
-// when orders.length === 0 (i.e., no real Supabase data yet).
-// ─────────────────────────────────────────────────────────────────────────────
-
 function formatCurrencyLocal(amount: number, currency: string) {
     return new Intl.NumberFormat('en-CA', {
         style: 'currency',
@@ -49,6 +39,13 @@ function formatCurrencyLocal(amount: number, currency: string) {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
     }).format(amount);
+}
+
+/** Smart tick formatting based on magnitude (PnL trading-style) */
+function formatAxisTick(value: number): string {
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    return value.toFixed(0);
 }
 
 function CustomTooltip({
@@ -92,7 +89,7 @@ function getGroupKey(date: Date, period: Period): string {
         weekStart.setDate(date.getDate() - date.getDay());
         return weekStart.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
     }
-    // 1Y or All → group by month
+    // 1Y or All -> group by month
     return date.toLocaleDateString('en-CA', { month: 'short', year: '2-digit' });
 }
 
@@ -116,31 +113,8 @@ export default function RevenueChart({ orders, currency }: Props) {
     });
     // ────────────────────────────────────────────────────────────────────────
 
-    // Dummy data generated relative to current time — replaced automatically
-    // when real Supabase orders are passed via the `orders` prop.
-    const isDummy = orders.length === 0;
-    const sourceOrders = useMemo<RawOrder[]>(() => {
-        if (!isDummy) return orders;
-        return [
-            ...Array.from({ length: 14 }, (_, i) => ({
-                created_at: new Date(now.getTime() - (13 - i) * 24 * 60 * 60 * 1000).toISOString(),
-                organizer_payout_amount: 200 + Math.random() * 600,
-            })),
-            ...Array.from({ length: 30 }, (_, i) => ({
-                created_at: new Date(now.getTime() - (60 - i) * 24 * 60 * 60 * 1000).toISOString(),
-                organizer_payout_amount: 300 + Math.random() * 800,
-            })),
-            ...Array.from({ length: 20 }, (_, i) => ({
-                created_at: new Date(now.getTime() - (150 - i * 3) * 24 * 60 * 60 * 1000).toISOString(),
-                organizer_payout_amount: 400 + Math.random() * 1000,
-            })),
-            ...Array.from({ length: 14 }, (_, i) => ({
-                created_at: new Date(now.getTime() - (365 - i * 20) * 24 * 60 * 60 * 1000).toISOString(),
-                organizer_payout_amount: 500 + Math.random() * 1200,
-            })),
-        ];
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isDummy, orders]); // Intentionally NOT depending on `now` — dummy data is fixed at mount
+    // Use real orders directly — no dummy/demo data fallback
+    const sourceOrders = orders;
 
     const chartData = useMemo(() => {
         const start = getPeriodStart(period);
@@ -171,41 +145,98 @@ export default function RevenueChart({ orders, currency }: Props) {
         });
     }, [sourceOrders, period]);
 
+    // ── PnL-style auto-scaling Y-axis domain ────────────────────────────────
+    const { yDomain, yAxisWidth } = useMemo(() => {
+        if (chartData.length === 0) {
+            return { yDomain: [0, 1] as [number, number], yAxisWidth: 45 };
+        }
+        const values = chartData.map((d) => d.revenue);
+        const minVal = Math.min(...values);
+        const maxVal = Math.max(...values);
+        const padding = (maxVal - minVal) * 0.1 || 1;
+        const domainMin = Math.max(0, minVal - padding);
+        const domainMax = maxVal + padding;
+
+        // Dynamic width based on largest formatted label
+        const maxLabel = formatAxisTick(domainMax);
+        const computedWidth = Math.max(45, maxLabel.length * 10);
+
+        return {
+            yDomain: [domainMin, domainMax] as [number, number],
+            yAxisWidth: computedWidth,
+        };
+    }, [chartData]);
+
+    // ── Period change indicator (PnL style) ─────────────────────────────────
+    const { change, pctChange, isPositive } = useMemo(() => {
+        if (chartData.length < 2) {
+            return { change: 0, pctChange: '0.0', isPositive: true };
+        }
+        const firstVal = chartData[0]?.revenue ?? 0;
+        const lastVal = chartData[chartData.length - 1]?.revenue ?? 0;
+        const diff = lastVal - firstVal;
+        const pct = firstVal > 0 ? ((diff / firstVal) * 100).toFixed(1) : '0.0';
+        return { change: diff, pctChange: pct, isPositive: diff >= 0 };
+    }, [chartData]);
+
     return (
         <div>
-            {/* Period Toggle + Live Clock */}
+            {/* Period Toggle + Change Indicator + Live Clock */}
             <div className="flex items-center justify-between gap-2 mb-4">
-                <div className="flex gap-1">
-                    {PERIODS.map((p) => (
-                        <button
-                            key={p.value}
-                            onClick={() => setPeriod(p.value)}
-                            className={`px-3 py-1 text-xs font-semibold rounded-full transition-all duration-150 ${period === p.value
-                                ? 'bg-[#F98C1F] text-white shadow-sm'
-                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                }`}
+                <div className="flex items-center gap-3">
+                    <div className="flex gap-1">
+                        {PERIODS.map((p) => (
+                            <button
+                                key={p.value}
+                                onClick={() => setPeriod(p.value)}
+                                className={`px-3 py-1 text-xs font-semibold rounded-full transition-all duration-150 ${period === p.value
+                                    ? 'bg-[#F98C1F] text-white shadow-sm'
+                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                    }`}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                    {/* Period change badge */}
+                    {chartData.length >= 2 && (
+                        <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                isPositive
+                                    ? 'bg-green-50 text-green-600'
+                                    : 'bg-red-50 text-red-600'
+                            }`}
                         >
-                            {p.label}
-                        </button>
-                    ))}
+                            <span>{isPositive ? '+' : ''}{formatCurrencyLocal(change, currency)}</span>
+                            <span className="opacity-70">({isPositive ? '+' : ''}{pctChange}%)</span>
+                        </span>
+                    )}
                 </div>
                 <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono">
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                     {liveTimestamp}
-                    {isDummy && <span className="ml-1 text-[10px] text-orange-400 font-sans font-medium">(demo)</span>}
                 </div>
             </div>
 
             {chartData.length === 0 ? (
-                <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">
-                    No data for this period
+                <div className="flex flex-col items-center justify-center h-[220px] text-gray-400 text-sm gap-1">
+                    <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                    </svg>
+                    <span>No revenue data for this period</span>
                 </div>
             ) : (
                 <ResponsiveContainer width="100%" height={220}>
-                    <LineChart
+                    <ComposedChart
                         data={chartData.length === 1 ? [{ date: '', revenue: 0 }, ...chartData] : chartData}
                         margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
                     >
+                        <defs>
+                            <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#F98C1F" stopOpacity={0.2} />
+                                <stop offset="100%" stopColor="#F98C1F" stopOpacity={0.02} />
+                            </linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                         <XAxis
                             dataKey="date"
@@ -218,12 +249,19 @@ export default function RevenueChart({ orders, currency }: Props) {
                             tick={{ fontSize: 11, fill: '#9ca3af' }}
                             axisLine={false}
                             tickLine={false}
-                            tickFormatter={(v) => formatCurrencyLocal(v, currency)}
-                            width={70}
+                            tickFormatter={formatAxisTick}
+                            domain={yDomain}
+                            width={yAxisWidth}
                         />
                         <Tooltip
                             content={<CustomTooltip currency={currency} />}
                             cursor={{ stroke: '#F98C1F', strokeWidth: 1, strokeDasharray: '4 4' }}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="revenue"
+                            fill="url(#revenueGradient)"
+                            stroke="none"
                         />
                         <Line
                             type="monotone"
@@ -233,7 +271,7 @@ export default function RevenueChart({ orders, currency }: Props) {
                             dot={false}
                             activeDot={{ r: 5, fill: '#F98C1F', stroke: '#fff', strokeWidth: 2 }}
                         />
-                    </LineChart>
+                    </ComposedChart>
                 </ResponsiveContainer>
             )}
         </div>
