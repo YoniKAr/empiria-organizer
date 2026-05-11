@@ -381,6 +381,13 @@ export default function CreateEventWizard({
     setForm((f) => {
       const occs = [...f.occurrences];
       occs[index] = { ...occs[index], [field]: value };
+      // Auto-default end to start + 1 hour when setting start and end is empty
+      if (field === 'starts_at' && value && !occs[index].ends_at) {
+        const d = new Date(value);
+        d.setHours(d.getHours() + 1);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        occs[index].ends_at = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
       return { ...f, occurrences: occs };
     });
   };
@@ -1434,6 +1441,7 @@ function StepDateVenue({
                     <Input
                       type="datetime-local"
                       value={occ.ends_at}
+                      min={occ.starts_at || undefined}
                       onChange={(e) => updateOccurrence(i, 'ends_at', e.target.value)}
                       aria-invalid={!!errors[`occ_${i}_ends_at`]}
                       className="h-11"
