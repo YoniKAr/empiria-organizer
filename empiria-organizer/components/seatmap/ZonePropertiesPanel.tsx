@@ -34,7 +34,9 @@ export function ZonePropertiesPanel({
     );
   }
 
-  const otherUsedColors = usedColors.filter((c) => c !== selectedZone.color);
+  const otherUsedColors = zones
+    .filter((z) => z.id !== selectedZoneId)
+    .map((z) => z.color);
   const totalTierQty = selectedZone.tiers.reduce((sum, t) => sum + t.initial_quantity, 0);
 
   return (

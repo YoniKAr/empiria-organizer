@@ -25,7 +25,8 @@ function makeDefaultTier(currency: string): ZoneTier {
 }
 
 function makeDefaultZone(usedColors: string[], currency: string): ZoneDefinition {
-  const availableColor = ZONE_COLORS.find((c) => !usedColors.includes(c)) ?? ZONE_COLORS[0];
+  const availableColor = ZONE_COLORS.find((c) => !usedColors.includes(c))
+    ?? "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0");
   return {
     id: crypto.randomUUID(),
     tier_id: "",
@@ -111,8 +112,6 @@ export function ZoneListEditor({
     emitChange(updated);
   }
 
-  const usedColors = zones.map((z) => z.color);
-
   const totalCapacity = zones.reduce((sum, z) => {
     const zoneTiers = z.tiers && z.tiers.length > 0 ? z.tiers : [];
     return sum + zoneTiers.reduce((s, t) => s + t.initial_quantity, 0);
@@ -137,7 +136,9 @@ export function ZoneListEditor({
           const isExpanded = expandedZoneId === zone.id;
           const zoneTiers = zone.tiers && zone.tiers.length > 0 ? zone.tiers : [];
           const zoneCapacity = zoneTiers.reduce((s, t) => s + t.initial_quantity, 0);
-          const otherUsedColors = usedColors.filter((c) => c !== zone.color);
+          const otherUsedColors = zones
+            .filter((z) => z.id !== zone.id)
+            .map((z) => z.color);
 
           return (
             <div
