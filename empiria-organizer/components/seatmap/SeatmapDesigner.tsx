@@ -13,6 +13,7 @@ import {
   util,
   type TPointerEventInfo,
 } from "fabric";
+import { Plus, Trash2 } from "lucide-react";
 import { Toolbar } from "./Toolbar";
 import { ZonePropertiesPanel, ZONE_COLORS } from "./ZonePropertiesPanel";
 import { SeatPlacer } from "./SeatPlacer";
@@ -108,9 +109,11 @@ export function SeatmapDesigner({
   const zoneCounterRef = useRef(0);
   const zonesRef = useRef<ZoneState[]>([]);
 
-  // Keep zonesRef in sync
+  // Keep zonesRef in sync and auto-sync config whenever zones change
   useEffect(() => {
     zonesRef.current = zones;
+    syncConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zones]);
 
   // Initialize canvas
@@ -241,7 +244,6 @@ export function SeatmapDesigner({
       }
 
       const zoneDefs: ZoneDefinition[] = currentZones
-        .filter((z) => zonePolygonsMap.has(z.id))
         .map((z) => {
           const tiers: ZoneTier[] = z.tiers.map((t) => ({
             id: t.id,
@@ -858,6 +860,80 @@ export function SeatmapDesigner({
     setAddingToZoneId(null);
   }
 
+  function handleAddZone() {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    zoneCounterRef.current += 1;
+    const id = crypto.randomUUID();
+    const polygonId = crypto.randomUUID();
+    const usedColors = zonesRef.current.map((z) => z.color);
+    const color = getNextAvailableColor(usedColors);
+
+    // Stagger position so new zones don't overlap
+    const offset = zonesRef.current.length;
+    const x = 80 + (offset % 4) * 160;
+    const y = 60 + Math.floor(offset / 4) * 120;
+
+    const rect = new Rect({
+      left: x,
+      top: y,
+      width: 140,
+      height: 90,
+      fill: color + "40",
+      stroke: color,
+      strokeWidth: 2,
+    });
+    setObjData(rect, { zoneId: id, polygonId });
+
+    canvas.add(rect);
+    canvas.setActiveObject(rect);
+    canvas.renderAll();
+
+    const newZone: ZoneState = {
+      id,
+      name: `Zone ${zoneCounterRef.current}`,
+      color,
+      polygons: [{ id: polygonId, seats: [] }],
+      seats: [],
+      tiers: [{
+        id: crypto.randomUUID(),
+        name: "General",
+        price: 0,
+        initial_quantity: 100,
+        max_per_order: 10,
+        description: "",
+        currency,
+      }],
+    };
+
+    setZones((prev) => [...prev, newZone]);
+    setSelectedZoneId(id);
+    setActiveTool("select");
+  }
+
+  function handleRemoveZone(zoneId: string) {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    // Remove all canvas objects for this zone
+    const toRemove = canvas.getObjects().filter((obj) => {
+      const od = getObjData(obj);
+      return od?.zoneId === zoneId || od?.sectionId === zoneId;
+    });
+    toRemove.forEach((obj) => canvas.remove(obj));
+    canvas.discardActiveObject();
+    canvas.renderAll();
+
+    setZones((prev) => prev.filter((z) => z.id !== zoneId));
+    if (selectedZoneId === zoneId) {
+      setSelectedZoneId(null);
+    }
+    if (addingToZoneId === zoneId) {
+      setAddingToZoneId(null);
+    }
+  }
+
   const selectedZone = zones.find((z) => z.id === selectedZoneId);
 
   return (
@@ -903,82 +979,103 @@ export function SeatmapDesigner({
             />
           )}
 
-          {zones.length > 0 && (
-            <div className="p-4 border-t">
-              <h3 className="font-medium text-sm mb-2">
-                All {mode === "zone" ? "Zones" : "Sections"} (
-                {zones.length})
+          <div className="p-4 border-t">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-medium text-sm">
+                All {mode === "zone" ? "Zones" : "Sections"} ({zones.length})
               </h3>
-              <div className="space-y-1">
-                {zones.map((z) => (
-                  <div key={z.id} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleAddZone}
+                className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              >
+                <Plus className="size-3" />
+                Add Zone
+              </button>
+            </div>
+            {zones.length === 0 && (
+              <p className="text-xs text-muted-foreground py-2">
+                Click &ldquo;Add Zone&rdquo; to create a zone with a rectangle on
+                the canvas. You can also use the polygon or rectangle drawing tools.
+              </p>
+            )}
+            <div className="space-y-1">
+              {zones.map((z) => (
+                <div key={z.id} className="flex items-center gap-1">
+                  <button
+                    className={`flex-1 text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${
+                      selectedZoneId === z.id
+                        ? "bg-accent"
+                        : "hover:bg-accent/50"
+                    }`}
+                    onClick={() => {
+                      setSelectedZoneId(z.id);
+                      setAddingToZoneId(null);
+                      const canvas = fabricRef.current;
+                      if (!canvas) return;
+                      // Select the first polygon of this zone on canvas
+                      const objs = canvas.getObjects();
+                      for (const obj of objs) {
+                        const d = getObjData(obj);
+                        if (d?.zoneId === z.id && !d.seatId && !d.isSeatLabel) {
+                          canvas.setActiveObject(obj);
+                          canvas.renderAll();
+                          break;
+                        }
+                      }
+                    }}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: z.color }}
+                    />
+                    <span className="truncate">{z.name}</span>
+                    {z.polygons.length > 1 && (
+                      <span className="text-xs text-muted-foreground">
+                        ({z.polygons.length})
+                      </span>
+                    )}
+                    {z.tiers.length > 1 && (
+                      <span className="text-xs text-muted-foreground">
+                        {z.tiers.length}T
+                      </span>
+                    )}
+                    {(mode === "seat" || showSeatPlacer) && z.seats.length > 0 && (
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {z.seats.length} seats
+                      </span>
+                    )}
+                  </button>
+                  {mode === "zone" && (
                     <button
-                      className={`flex-1 text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${
-                        selectedZoneId === z.id
-                          ? "bg-accent"
-                          : "hover:bg-accent/50"
+                      title="Add polygon to this zone"
+                      className={`shrink-0 w-7 h-7 rounded flex items-center justify-center text-xs ${
+                        addingToZoneId === z.id
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-accent text-muted-foreground"
                       }`}
                       onClick={() => {
-                        setSelectedZoneId(z.id);
-                        setAddingToZoneId(null);
-                        const canvas = fabricRef.current;
-                        if (!canvas) return;
-                        // Select the first polygon of this zone
-                        canvas.forEachObject((obj) => {
-                          const d = getObjData(obj);
-                          if (d?.zoneId === z.id && !d.seatId && !d.isSeatLabel) {
-                            canvas.setActiveObject(obj);
-                            canvas.renderAll();
-                            return;
-                          }
-                        });
+                        if (addingToZoneId === z.id) {
+                          handleStopAddingToZone();
+                        } else {
+                          handleStartAddingToZone(z.id);
+                        }
                       }}
                     >
-                      <span
-                        className="w-3 h-3 rounded-full shrink-0"
-                        style={{ backgroundColor: z.color }}
-                      />
-                      <span className="truncate">{z.name}</span>
-                      {z.polygons.length > 1 && (
-                        <span className="text-xs text-muted-foreground">
-                          ({z.polygons.length})
-                        </span>
-                      )}
-                      {z.tiers.length > 1 && (
-                        <span className="text-xs text-muted-foreground">
-                          {z.tiers.length}T
-                        </span>
-                      )}
-                      {(mode === "seat" || showSeatPlacer) && z.seats.length > 0 && (
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {z.seats.length} seats
-                        </span>
-                      )}
+                      +
                     </button>
-                    {mode === "zone" && (
-                      <button
-                        title="Add polygon to this zone"
-                        className={`shrink-0 w-7 h-7 rounded flex items-center justify-center text-xs ${
-                          addingToZoneId === z.id
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-accent text-muted-foreground"
-                        }`}
-                        onClick={() => {
-                          if (addingToZoneId === z.id) {
-                            handleStopAddingToZone();
-                          } else {
-                            handleStartAddingToZone(z.id);
-                          }
-                        }}
-                      >
-                        +
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                  )}
+                  <button
+                    title="Remove zone"
+                    className="shrink-0 w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => handleRemoveZone(z.id)}
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
