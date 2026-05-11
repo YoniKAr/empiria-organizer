@@ -2135,7 +2135,8 @@ function StepTicketsAndSeating({
           <div>
             <p className="text-sm font-semibold text-foreground">Sales Tax</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Choose whether to charge 13% HST on ticket prices. You are responsible for collecting and remitting this tax.
+              Enable to automatically charge the applicable sales tax on ticket prices.
+              The correct rate (GST/HST/PST) is determined automatically based on the event and buyer location via Stripe Tax.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -2153,8 +2154,13 @@ function StepTicketsAndSeating({
               />
             </button>
             <span className="text-sm font-medium text-foreground">
-              {form.charge_ticket_tax ? 'Charging 13% HST on tickets' : 'No sales tax on tickets'}
+              {form.charge_ticket_tax ? 'Automatic sales tax on tickets' : 'No sales tax on tickets'}
             </span>
+          </div>
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
+            <p className="text-xs text-amber-800">
+              <span className="font-semibold">Note:</span> The platform convenience fee will always include 13% HST regardless of this setting.
+            </p>
           </div>
         </div>
 
@@ -2623,7 +2629,7 @@ function StepReview({
           </div>
           <div className="flex justify-between text-sm mt-2">
             <span className="text-muted-foreground">Sales Tax</span>
-            <span>{form.charge_ticket_tax ? 'Charging 13% HST' : 'Not charging'}</span>
+            <span>{form.charge_ticket_tax ? 'Automatic (location-based)' : 'Not charging'}</span>
           </div>
         </div>
 
