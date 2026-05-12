@@ -48,6 +48,8 @@ interface EventFormInput {
   seating_config?: Record<string, unknown> | null;
   pass_processing_fee?: boolean;
   charge_ticket_tax?: boolean;
+  refund_policy?: string;
+  show_remaining_seats?: boolean;
 }
 
 type ActionResult<T = unknown> =
@@ -128,6 +130,8 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
       seating_config: form.seating_config || {},
       pass_processing_fee: form.pass_processing_fee ?? false,
       charge_ticket_tax: form.charge_ticket_tax ?? false,
+      refund_policy: form.refund_policy || 'non_refundable',
+      show_remaining_seats: form.show_remaining_seats ?? true,
       status: 'draft',
       source_app: 'organizer.empiria',
     })
@@ -222,6 +226,8 @@ export async function updateEvent(
       seating_config: form.seating_config || {},
       pass_processing_fee: form.pass_processing_fee ?? false,
       charge_ticket_tax: form.charge_ticket_tax ?? false,
+      refund_policy: form.refund_policy || 'non_refundable',
+      show_remaining_seats: form.show_remaining_seats ?? true,
     })
     .eq('id', eventId);
 

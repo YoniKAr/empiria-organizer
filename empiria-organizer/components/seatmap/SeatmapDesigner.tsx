@@ -539,12 +539,12 @@ export function SeatmapDesigner({
       const y = pointer.y;
 
       const circle = new Circle({
-        left: x - 6,
-        top: y - 6,
-        radius: 6,
+        left: x - 10,
+        top: y - 10,
+        radius: 10,
         fill: color,
         stroke: "#fff",
-        strokeWidth: 1,
+        strokeWidth: 1.5,
         selectable: false,
         evented: false,
       });
@@ -559,7 +559,8 @@ export function SeatmapDesigner({
       const seatLabel = new FabricText(label, {
         left: x,
         top: y,
-        fontSize: 7,
+        fontSize: 8,
+        fontWeight: "bold",
         fontFamily: "system-ui, sans-serif",
         fill: "#ffffff",
         originX: "center",
@@ -904,12 +905,12 @@ export function SeatmapDesigner({
         seats.push({ id: seatId, label, x, y });
 
         const circle = new Circle({
-          left: x - 6,
-          top: y - 6,
-          radius: 6,
+          left: x - 10,
+          top: y - 10,
+          radius: 10,
           fill: color,
           stroke: "#fff",
-          strokeWidth: 1,
+          strokeWidth: 1.5,
           selectable: false,
           evented: false,
         });
@@ -924,7 +925,8 @@ export function SeatmapDesigner({
         const seatLabel = new FabricText(label, {
           left: x,
           top: y,
-          fontSize: 7,
+          fontSize: 8,
+          fontWeight: "bold",
           fontFamily: "system-ui, sans-serif",
           fill: "#ffffff",
           originX: "center",

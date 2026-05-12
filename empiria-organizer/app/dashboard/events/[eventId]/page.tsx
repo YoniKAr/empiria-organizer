@@ -27,7 +27,8 @@ export default async function EventDetailPage({ params }: PageProps) {
       id, title, slug, status,
       venue_name, city, location_type,
       total_capacity, total_tickets_sold,
-      cover_image_url, currency, organizer_id
+      cover_image_url, currency, organizer_id,
+      refund_policy, show_remaining_seats
     `)
     .eq('id', eventId)
     .single();
@@ -195,8 +196,22 @@ export default async function EventDetailPage({ params }: PageProps) {
           )}
         </div>
 
+        {/* Event Settings Summary */}
+        <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-3">
+          <span>
+            Refund: <span className="font-medium text-gray-700">
+              {event.refund_policy === 'fully_refundable' ? 'Fully Refundable' : event.refund_policy === 'partial_refundable' ? 'Contact Organizer' : 'Non-Refundable'}
+            </span>
+          </span>
+          <span>
+            Remaining tickets: <span className="font-medium text-gray-700">
+              {event.show_remaining_seats ? 'Visible to attendees' : 'Hidden'}
+            </span>
+          </span>
+        </div>
+
         {/* Management Actions */}
-        <div className="border-t border-gray-100 pt-4">
+        <div className="border-t border-gray-100 pt-4 mt-4">
           <EventActions
             eventId={event.id}
             status={event.status}
