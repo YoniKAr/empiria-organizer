@@ -50,6 +50,8 @@ interface EventFormInput {
   charge_ticket_tax?: boolean;
   refund_policy?: string;
   show_remaining_seats?: boolean;
+  sponsor_logos?: string[];
+  trailer_url?: string;
 }
 
 type ActionResult<T = unknown> =
@@ -132,6 +134,8 @@ export async function createEvent(form: EventFormInput): Promise<ActionResult<{ 
       charge_ticket_tax: form.charge_ticket_tax ?? false,
       refund_policy: form.refund_policy || 'non_refundable',
       show_remaining_seats: form.show_remaining_seats ?? true,
+      sponsor_logos: form.sponsor_logos || [],
+      trailer_url: form.trailer_url || null,
       status: 'draft',
       source_app: 'organizer.empiria',
     })
@@ -228,6 +232,8 @@ export async function updateEvent(
       charge_ticket_tax: form.charge_ticket_tax ?? false,
       refund_policy: form.refund_policy || 'non_refundable',
       show_remaining_seats: form.show_remaining_seats ?? true,
+      sponsor_logos: form.sponsor_logos || [],
+      trailer_url: form.trailer_url || null,
     })
     .eq('id', eventId);
 
@@ -1327,6 +1333,43 @@ export async function uploadEventGalleryImage(
   return { success: true, data: { photo_url } };
 }
 
+export async function uploadSponsorLogo(
+  formData: FormData
+): Promise<ActionResult<{ logo_url: string }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const file = formData.get('sponsor_logo') as File | null;
+  if (!file || file.size === 0) return { success: false, error: 'No file provided' };
+
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+  if (!allowed.includes(file.type)) {
+    return { success: false, error: 'File must be a JPEG, PNG, WebP, GIF, or SVG image' };
+  }
+
+  if (file.size > 2 * 1024 * 1024) {
+    return { success: false, error: 'File must be under 2 MB' };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const ext = file.name.split('.').pop() ?? 'png';
+  const safeSub = user.sub.replace(/\|/g, '_');
+  const uniqueId = crypto.randomUUID();
+  const path = `${safeSub}/sponsors/${uniqueId}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('events_gallery')
+    .upload(path, file, { contentType: file.type });
+
+  if (uploadError) return { success: false, error: uploadError.message };
+
+  const { data: publicUrlData } = supabase.storage.from('events_gallery').getPublicUrl(path);
+
+  const logo_url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+  return { success: true, data: { logo_url } };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MANUAL TICKET ISSUANCE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1696,4 +1739,165 @@ export async function saveRevenueSplits(
   }
 
   return { success: true, data: { count: splits.length } };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEND EVENT UPDATE EMAIL
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function sendEventUpdate(input: {
+  eventId: string;
+  subject: string;
+  message: string;
+}): Promise<ActionResult<{ sent: number }>> {
+  const user = await getAuthUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const effectiveOrgId = await getEffectiveOrganizerId();
+  const supabase = getSupabaseAdmin();
+
+  // Verify ownership
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, title, organizer_id, venue_name, city')
+    .eq('id', input.eventId)
+    .single();
+
+  if (!event || event.organizer_id !== effectiveOrgId) {
+    return { success: false, error: 'Event not found or access denied' };
+  }
+
+  if (!input.subject.trim() || !input.message.trim()) {
+    return { success: false, error: 'Subject and message are required' };
+  }
+
+  // Get unique attendee emails from tickets for this event
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select('attendee_email, attendee_name')
+    .eq('event_id', input.eventId)
+    .in('status', ['active', 'checked_in']);
+
+  if (!tickets || tickets.length === 0) {
+    return { success: false, error: 'No ticket holders found for this event' };
+  }
+
+  // Deduplicate by email
+  const emailMap = new Map<string, string>();
+  for (const t of tickets) {
+    if (t.attendee_email && !emailMap.has(t.attendee_email)) {
+      emailMap.set(t.attendee_email, t.attendee_name || '');
+    }
+  }
+
+  const recipients = Array.from(emailMap.entries());
+  if (recipients.length === 0) {
+    return { success: false, error: 'No valid email addresses found' };
+  }
+
+  // Send emails via Resend
+  const { resend } = await import('@/lib/resend');
+  const venue = [event.venue_name, event.city].filter(Boolean).join(', ');
+
+  let sentCount = 0;
+  const batchSize = 50;
+
+  for (let i = 0; i < recipients.length; i += batchSize) {
+    const batch = recipients.slice(i, i + batchSize);
+    const promises = batch.map(([email, name]) =>
+      resend.emails.send({
+        from: 'Empiria <tickets@empiriaindia.com>',
+        to: email,
+        subject: input.subject,
+        html: buildUpdateEmailHtml({
+          attendeeName: name,
+          eventTitle: event.title,
+          venue,
+          subject: input.subject,
+          message: input.message,
+        }),
+      }).then(() => { sentCount++; }).catch((err) => {
+        console.error(`Failed to send to ${email}:`, err);
+      })
+    );
+    await Promise.all(promises);
+  }
+
+  return { success: true, data: { sent: sentCount } };
+}
+
+function buildUpdateEmailHtml(data: {
+  attendeeName: string;
+  eventTitle: string;
+  venue: string;
+  subject: string;
+  message: string;
+}): string {
+  const messageHtml = data.message.replace(/\n/g, '<br />');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Event Update</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #f3f4f6;">
+    <tr>
+      <td align="center" style="padding: 32px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width: 600px; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="background: #111827; padding: 24px 32px; text-align: center;">
+              <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.025em;">Empiria</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 32px 32px 16px;">
+              <h2 style="margin: 0 0 8px; font-size: 20px; font-weight: 700; color: #111827;">Event Update</h2>
+              <p style="margin: 0; font-size: 15px; color: #6b7280; line-height: 1.5;">
+                Hi ${data.attendeeName || 'there'}, here\u2019s an update about an event you have tickets for.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background: #fffbeb; border-radius: 8px; border: 1px solid #fde68a;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <h3 style="margin: 0 0 4px; font-size: 17px; font-weight: 700; color: #92400e;">${data.eventTitle}</h3>
+                    ${data.venue ? `<p style="margin: 0; font-size: 14px; color: #b45309;">${data.venue}</p>` : ''}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 32px;">
+              <h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 600; color: #111827;">${data.subject}</h3>
+              <div style="font-size: 15px; color: #374151; line-height: 1.7; background: #f9fafb; padding: 16px 20px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                ${messageHtml}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 32px 24px;" align="center">
+              <a href="https://shop.empiriaindia.com" style="display: inline-block; padding: 10px 24px; background: #111827; color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 6px;">
+                View Event
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 32px; background: #f9fafb; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center; line-height: 1.5;">
+                You\u2019re receiving this because you have tickets for ${data.eventTitle}. Sent by Empiria.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }

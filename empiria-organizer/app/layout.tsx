@@ -28,6 +28,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="light">
+      <head>
+        {process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY && (
+          <script
+            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&libraries=places`}
+            async
+            defer
+          />
+        )}
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {/* Banner renders at the very top, above all dashboard UI.
             It only appears when an admin is in perspective mode. */}

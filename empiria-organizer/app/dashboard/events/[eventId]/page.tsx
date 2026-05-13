@@ -7,6 +7,7 @@ import { ArrowLeft, Calendar, MapPin, Users } from 'lucide-react';
 import { TicketTable } from './TicketTable';
 import { EventActions } from './EventActions';
 import { IssueTicketsModal } from './IssueTicketsModal';
+import { SendUpdateForm } from './SendUpdateForm';
 
 interface PageProps {
   params: Promise<{ eventId: string }>;
@@ -276,6 +277,14 @@ export default async function EventDetailPage({ params }: PageProps) {
           <TicketTable tickets={allTickets} />
         )}
       </div>
+
+      {/* Send Update to Ticket Holders */}
+      {event.status === 'published' && allTickets.length > 0 && (
+        <SendUpdateForm
+          eventId={event.id}
+          ticketHolderCount={new Set(allTickets.map(t => t.attendee_email).filter(Boolean)).size}
+        />
+      )}
     </div>
   );
 }

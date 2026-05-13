@@ -70,6 +70,7 @@ export function StepSeating({
   currency = "cad",
 }: StepSeatingProps) {
   const { uploading, error: uploadError, uploadImage } = useImageUpload();
+  const [isDraggingVenue, setIsDraggingVenue] = useState(false);
   const [imageUrl, setImageUrl] = useState(seatingConfig?.image_url ?? null);
   const [imageWidth, setImageWidth] = useState(
     seatingConfig?.image_width ?? 0
@@ -82,6 +83,19 @@ export function StepSeating({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const result = await uploadImage(file);
+    if (result) {
+      setImageUrl(result.url);
+      setImageWidth(result.width);
+      setImageHeight(result.height);
+    }
+  }
+
+  async function handleVenueDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDraggingVenue(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
     const result = await uploadImage(file);
     if (result) {
       setImageUrl(result.url);
@@ -105,10 +119,18 @@ export function StepSeating({
     <div className="space-y-2">
       <Label>Venue Image</Label>
       {!imageUrl ? (
-        <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
+        <label
+          className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+            isDraggingVenue ? "border-primary bg-primary/10" : "hover:border-primary/50"
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingVenue(true); }}
+          onDragEnter={(e) => { e.preventDefault(); setIsDraggingVenue(true); }}
+          onDragLeave={() => setIsDraggingVenue(false)}
+          onDrop={handleVenueDrop}
+        >
           <Upload className="h-8 w-8 text-muted-foreground mb-2" />
           <span className="text-sm text-muted-foreground">
-            {uploading ? "Uploading..." : "Click to upload venue image"}
+            {uploading ? "Uploading..." : isDraggingVenue ? "Drop image here" : "Drag & drop or click to upload venue image"}
           </span>
           <span className="text-xs text-muted-foreground mt-1">
             PNG, JPG, or WebP (max 5MB)
